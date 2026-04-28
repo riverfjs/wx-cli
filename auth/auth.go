@@ -21,23 +21,26 @@ func accountsDir() string {
 	return filepath.Join(stateDir(), "accounts")
 }
 
-func SaveCredential(cred *api.Credential) string {
+func SaveCredential(cred *api.Credential, profile string) string {
 	dir := accountsDir()
 	os.MkdirAll(dir, 0755)
-	id := cred.BotID
-	if id == "" {
-		id = "default"
+	name := profile
+	if name == "" {
+		name = cred.BotID
 	}
-	path := filepath.Join(dir, id+".json")
+	if name == "" {
+		name = "default"
+	}
+	path := filepath.Join(dir, name+".json")
 	data, _ := json.MarshalIndent(cred, "", "  ")
 	os.WriteFile(path, data, 0600)
 	return path
 }
 
-func LoadCredential(id string) *api.Credential {
+func LoadCredential(profile string) *api.Credential {
 	dir := accountsDir()
-	if id != "" {
-		path := filepath.Join(dir, id+".json")
+	if profile != "" {
+		path := filepath.Join(dir, profile+".json")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil
@@ -65,10 +68,15 @@ func LoadCredential(id string) *api.Credential {
 	return best
 }
 
-func ListCredentials() []api.Credential {
+type AccountInfo struct {
+	Profile string
+	Cred    api.Credential
+}
+
+func ListAccounts() []AccountInfo {
 	dir := accountsDir()
 	entries, _ := os.ReadDir(dir)
-	var out []api.Credential
+	var out []AccountInfo
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -76,25 +84,35 @@ func ListCredentials() []api.Credential {
 		data, _ := os.ReadFile(filepath.Join(dir, e.Name()))
 		var c api.Credential
 		json.Unmarshal(data, &c)
-		out = append(out, c)
+		out = append(out, AccountInfo{
+			Profile: strings.TrimSuffix(e.Name(), ".json"),
+			Cred:    c,
+		})
 	}
 	return out
 }
 
-func LoadSyncBuf() string {
-	data, err := os.ReadFile(filepath.Join(stateDir(), "sync_buf"))
+func SyncBufPath(profile string) string {
+	if profile != "" {
+		return filepath.Join(stateDir(), "sync_buf_"+profile)
+	}
+	return filepath.Join(stateDir(), "sync_buf")
+}
+
+func LoadSyncBuf(profile string) string {
+	data, err := os.ReadFile(SyncBufPath(profile))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
 }
 
-func SaveSyncBuf(buf string) {
+func SaveSyncBuf(profile string, buf string) {
 	os.MkdirAll(stateDir(), 0755)
-	os.WriteFile(filepath.Join(stateDir(), "sync_buf"), []byte(buf), 0644)
+	os.WriteFile(SyncBufPath(profile), []byte(buf), 0644)
 }
 
-func Login() (*api.Credential, error) {
+func Login(profile string) (*api.Credential, error) {
 	fmt.Println("Requesting QR code...")
 	qrcode, qrURL, err := api.GetQrCode()
 	if err != nil {
@@ -122,7 +140,7 @@ func Login() (*api.Credential, error) {
 			fmt.Println("Redirecting...")
 		}
 		if status == "confirmed" && cred != nil {
-			path := SaveCredential(cred)
+			path := SaveCredential(cred, profile)
 			fmt.Printf("\nLogin successful! Saved to %s\n", path)
 			return cred, nil
 		}

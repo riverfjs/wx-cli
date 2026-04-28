@@ -11,8 +11,8 @@ import (
 
 type Handler func(msg *api.WeixinMessage)
 
-func Start(cred *api.Credential, handler Handler, done <-chan struct{}) {
-	syncBuf := auth.LoadSyncBuf()
+func Start(cred *api.Credential, profile string, handler Handler, done <-chan struct{}) {
+	syncBuf := auth.LoadSyncBuf(profile)
 	errCount := 0
 
 	for {
@@ -54,7 +54,7 @@ func Start(cred *api.Credential, handler Handler, done <-chan struct{}) {
 		errCount = 0
 		if resp.GetUpdatesBuf != "" {
 			syncBuf = resp.GetUpdatesBuf
-			auth.SaveSyncBuf(syncBuf)
+			auth.SaveSyncBuf(profile, syncBuf)
 		}
 		for _, msg := range resp.Msgs {
 			handler(msg)

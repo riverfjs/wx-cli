@@ -37,6 +37,7 @@ var (
 	contacts      = make(map[string]*contact)
 	mu            sync.Mutex
 	activeContact string
+	curProfile    string
 )
 
 func shortID(id string) string {
@@ -256,7 +257,7 @@ func handleLine(line string, cred *api.Credential) {
 			mu.Unlock()
 
 		case "/login":
-			newCred, err := auth.Login()
+			newCred, err := auth.Login(curProfile)
 			if err != nil {
 				fmt.Printf("%sLogin failed: %s%s\n", cR, err, cW)
 			} else {
@@ -288,12 +289,17 @@ func handleLine(line string, cred *api.Credential) {
 	}
 }
 
-func Interactive(cred *api.Credential) {
-	fmt.Printf("\n%s%swx-cli%s Interactive Mode\n", cB, cG, cW)
+func Interactive(cred *api.Credential, profile string) {
+	curProfile = profile
+	fmt.Printf("\n%s%swx-cli%s Interactive Mode", cB, cG, cW)
+	if profile != "" {
+		fmt.Printf(" [%s]", profile)
+	}
+	fmt.Println()
 	fmt.Printf("%sListening for messages... Type /help for commands.%s\n\n", cDIM, cW)
 
 	done := make(chan struct{})
-	go monitor.Start(cred, func(msg *api.WeixinMessage) {
+	go monitor.Start(cred, profile, func(msg *api.WeixinMessage) {
 		displayMsg(msg)
 		fmt.Printf("%swx>%s ", cDIM, cW)
 	}, done)

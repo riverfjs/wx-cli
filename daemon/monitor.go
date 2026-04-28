@@ -19,9 +19,17 @@ type MessageEvent struct {
 	Time         string `json:"time"`
 }
 
-func Monitor(cred *api.Credential) {
-	syncBuf := auth.LoadSyncBuf()
+func profileHint(profile string) string {
+	if profile != "" {
+		return " --profile " + profile
+	}
+	return ""
+}
+
+func Monitor(cred *api.Credential, profile string) {
+	syncBuf := auth.LoadSyncBuf(profile)
 	errCount := 0
+	pauseCount := 0
 
 	fmt.Fprintln(os.Stderr, "[wx-monitor] started, waiting for messages...")
 
@@ -46,7 +54,12 @@ func Monitor(cred *api.Credential) {
 		}
 
 		if code == -14 {
-			fmt.Fprintln(os.Stderr, "[wx-monitor] session paused, retrying in 5s")
+			pauseCount++
+			if pauseCount >= 3 {
+				fmt.Fprintln(os.Stderr, "[wx-monitor] session expired, please re-login: wx login"+profileHint(profile))
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "[wx-monitor] session paused (%d/3), retrying in 5s\n", pauseCount)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -60,7 +73,7 @@ func Monitor(cred *api.Credential) {
 		errCount = 0
 		if resp.GetUpdatesBuf != "" {
 			syncBuf = resp.GetUpdatesBuf
-			auth.SaveSyncBuf(syncBuf)
+			auth.SaveSyncBuf(profile, syncBuf)
 		}
 
 		for _, msg := range resp.Msgs {
