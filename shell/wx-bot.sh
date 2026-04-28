@@ -1,20 +1,23 @@
 #!/bin/bash
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 WX="$HOME/.claude/skills/wx-cli/bin/wx"
+ROLE_TEMPLATE="$PROJECT_DIR/prompts/system_role.md"
 
-# ── 检查登录 ──
+# ── check login ──
 if ! "$WX" accounts >/dev/null 2>&1 || [ -z "$("$WX" accounts 2>/dev/null)" ]; then
-  echo "未登录，请先执行: $WX login"
+  echo "Not logged in. Run: $WX login"
   exit 1
 fi
 
-echo "=== wx-bot 启动 ==="
-echo "监听微信消息，Claude 自动回复"
-echo "按 Ctrl+C 停止"
+echo "=== wx-bot started ==="
+echo "Listening for WeChat messages, Claude auto-reply"
+echo "Ctrl+C to stop"
 echo "-------------------------------"
 
-# ── 用量检查 ──
+# ── rate limit check ──
 check_overload() {
   python3 - <<'PYEOF'
 import json, time, sys
@@ -29,11 +32,17 @@ pct = fh.get("used_percentage", 0)
 if pct >= 85:
     secs = max(0, int(fh.get("resets_at", 0)) - int(time.time()))
     h, m = divmod(secs // 60, 60)
-    print(f"⚠️ Claude 用量已达 {round(pct)}%，请 {h}h {m}m 后再试")
+    print(f"Claude usage at {round(pct)}%, resets in {h}h {m}m")
 PYEOF
 }
 
-# ── 常驻监听 ──
+# ── build system prompt with actual user_id and context_token ──
+build_role() {
+  local to="$1" ctx="$2"
+  sed -e "s|{to_user_id}|$to|g" -e "s|{context_token}|$ctx|g" "$ROLE_TEMPLATE"
+}
+
+# ── monitor loop ──
 "$WX" monitor | while IFS= read -r line; do
   from=$(echo "$line" | jq -r '.from_user_id // empty')
   ctx=$(echo "$line" | jq -r '.context_token // empty')
@@ -43,46 +52,46 @@ PYEOF
 
   [[ -z "$from" || -z "$ctx" ]] && continue
 
-  echo "[$ts] 收到 [$type] from ${from:0:8}...: $text"
+  echo "[$ts] [$type] ${from:0:8}...: $text"
 
-  # 只处理文本和语音转文字
+  # text and voice transcription only
   if [[ "$type" != "text" && "$type" != "voice" ]]; then
-    "$WX" send --to "$from" --ctx "$ctx" --text "暂时只能处理文字消息哦" &
+    "$WX" send --to "$from" --ctx "$ctx" --text "I can only handle text messages for now." &
     continue
   fi
 
   [[ -z "$text" ]] && continue
 
-  # /help 命令
+  # built-in /help
   if [[ "$text" == "/help" ]]; then
     "$WX" send --to "$from" --ctx "$ctx" \
-      --text "👋 我是 AI 助手
-
-直接发消息即可对话
-发送 /help 查看帮助" &
+      --text "Hi, I'm an AI assistant. Just send me a message and I'll reply." &
     continue
   fi
 
-  # 用量检查
+  # rate limit guard
   overload=$(check_overload)
   if [[ -n "$overload" ]]; then
     "$WX" send --to "$from" --ctx "$ctx" --text "$overload" &
     continue
   fi
 
-  # 后台调 Claude 处理
+  # async: claude --print → wx send
   (
+    role=$(build_role "$from" "$ctx")
+
     reply=$(claude --print \
       --model claude-sonnet-4-6 \
       --permission-mode bypassPermissions \
+      --append-system-prompt "$role" \
       -p "$text" 2>/dev/null)
 
     if [[ -n "$reply" ]]; then
       "$WX" send --to "$from" --ctx "$ctx" --text "$reply"
     else
-      "$WX" send --to "$from" --ctx "$ctx" --text "（处理失败，请稍后重试）"
+      "$WX" send --to "$from" --ctx "$ctx" --text "(Failed to process, please try again later)"
     fi
-    echo "[$ts] 回复完成: ${from:0:8}..."
+    echo "[$ts] replied to ${from:0:8}..."
   ) &
 
 done
