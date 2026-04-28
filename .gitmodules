@@ -1,0 +1,3 @@
+[submodule "reference/openclaw-weixin"]
+	path = reference/openclaw-weixin
+	url = https://github.com/Tencent/openclaw-weixin
