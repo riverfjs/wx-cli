@@ -10,10 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"wx-cli/api"
-	"wx-cli/auth"
-	"wx-cli/monitor"
-	"wx-cli/send"
+	"wx-cli/internal/api"
+	"wx-cli/internal/auth"
+	"wx-cli/internal/msg"
 )
 
 const (
@@ -56,20 +55,20 @@ func getActive() *contact {
 	return contacts[activeContact]
 }
 
-func displayMsg(msg *api.WeixinMessage) {
-	if msg.MessageType == 2 {
+func displayMsg(m *api.WeixinMessage) {
+	if m.MessageType == 2 {
 		return
 	}
-	from := msg.FromUserID
+	from := m.FromUserID
 
 	mu.Lock()
 	c, ok := contacts[from]
-	if msg.ContextToken != "" {
+	if m.ContextToken != "" {
 		if !ok {
 			c = &contact{userID: from, name: shortID(from)}
 			contacts[from] = c
 		}
-		c.contextToken = msg.ContextToken
+		c.contextToken = m.ContextToken
 		c.lastSeen = time.Now()
 	}
 	mu.Unlock()
@@ -80,7 +79,7 @@ func displayMsg(msg *api.WeixinMessage) {
 	}
 	t := time.Now().Format("15:04:05")
 
-	for _, item := range msg.ItemList {
+	for _, item := range m.ItemList {
 		switch item.Type {
 		case 1:
 			txt := ""
@@ -233,11 +232,11 @@ func handleLine(line string, cred *api.Credential) {
 			var err error
 			switch cmd {
 			case "/image":
-				err = send.Image(cred, activeContact, c.contextToken, path)
+				err = msg.Image(cred, activeContact, c.contextToken, path)
 			case "/video":
-				err = send.Video(cred, activeContact, c.contextToken, path)
+				err = msg.Video(cred, activeContact, c.contextToken, path)
 			default:
-				err = send.File(cred, activeContact, c.contextToken, path)
+				err = msg.File(cred, activeContact, c.contextToken, path)
 			}
 			if err != nil {
 				fmt.Printf("%sFailed: %s%s\n", cR, err, cW)
@@ -281,7 +280,7 @@ func handleLine(line string, cred *api.Credential) {
 		fmt.Printf("%sNo active contact. Wait for a message first.%s\n", cR, cW)
 		return
 	}
-	if err := send.Text(cred, activeContact, c.contextToken, line); err != nil {
+	if err := msg.Text(cred, activeContact, c.contextToken, line); err != nil {
 		fmt.Printf("%sSend failed: %s%s\n", cR, err, cW)
 	} else {
 		t := time.Now().Format("15:04:05")
@@ -299,8 +298,8 @@ func Interactive(cred *api.Credential, profile string) {
 	fmt.Printf("%sListening for messages... Type /help for commands.%s\n\n", cDIM, cW)
 
 	done := make(chan struct{})
-	go monitor.Start(cred, profile, func(msg *api.WeixinMessage) {
-		displayMsg(msg)
+	go msg.Start(cred, profile, func(m *api.WeixinMessage) {
+		displayMsg(m)
 		fmt.Printf("%swx>%s ", cDIM, cW)
 	}, done)
 

@@ -1,4 +1,4 @@
-package send
+package msg
 
 import (
 	"crypto/rand"
@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"wx-cli/api"
-	"wx-cli/cdn"
+	"wx-cli/internal/api"
+	"wx-cli/internal/cdn"
 )
 
 func clientID() string {

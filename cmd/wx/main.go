@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"wx-cli/api"
-	"wx-cli/auth"
-	"wx-cli/cli"
-	"wx-cli/daemon"
+	"wx-cli/internal/api"
+	"wx-cli/internal/auth"
+	"wx-cli/internal/cli"
+	"wx-cli/internal/msg"
 )
 
 const (
@@ -38,6 +38,38 @@ func requireCred(profile string) *api.Credential {
 		os.Exit(1)
 	}
 	return cred
+}
+
+func parseSendArgs(args []string) (to, ctx, text, image, file, video string) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--to":
+			if i+1 < len(args) {
+				to = args[i+1]; i++
+			}
+		case "--ctx":
+			if i+1 < len(args) {
+				ctx = args[i+1]; i++
+			}
+		case "--text":
+			if i+1 < len(args) {
+				text = args[i+1]; i++
+			}
+		case "--image":
+			if i+1 < len(args) {
+				image = args[i+1]; i++
+			}
+		case "--file":
+			if i+1 < len(args) {
+				file = args[i+1]; i++
+			}
+		case "--video":
+			if i+1 < len(args) {
+				video = args[i+1]; i++
+			}
+		}
+	}
+	return
 }
 
 func main() {
@@ -76,10 +108,50 @@ func main() {
 		}
 
 	case "monitor":
-		daemon.Monitor(requireCred(profile), profile)
+		msg.Monitor(requireCred(profile), profile)
 
 	case "send":
-		daemon.Send(requireCred(profile), args[1:])
+		cred := requireCred(profile)
+		to, ctx, text, image, file, video := parseSendArgs(args[1:])
+
+		if to == "" || ctx == "" {
+			fmt.Fprintln(os.Stderr, "Usage: wx send --to USER_ID --ctx CONTEXT_TOKEN --text MSG")
+			fmt.Fprintln(os.Stderr, "       wx send --to USER_ID --ctx CONTEXT_TOKEN --image PATH")
+			fmt.Fprintln(os.Stderr, "       wx send --to USER_ID --ctx CONTEXT_TOKEN --file PATH")
+			os.Exit(1)
+		}
+
+		var err error
+		switch {
+		case text != "":
+			err = msg.Text(cred, to, ctx, text)
+		case image != "":
+			err = msg.Image(cred, to, ctx, image)
+		case file != "":
+			err = msg.File(cred, to, ctx, file)
+		case video != "":
+			err = msg.Video(cred, to, ctx, video)
+		default:
+			fmt.Fprintln(os.Stderr, "Specify --text, --image, --file, or --video")
+			os.Exit(1)
+		}
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Send failed: %s\n", err)
+			os.Exit(1)
+		}
+
+	case "token":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: wx token <user_id>")
+			os.Exit(1)
+		}
+		tok := auth.LoadContextToken(profile, args[1])
+		if tok == "" {
+			fmt.Fprintln(os.Stderr, "No context token found.")
+			os.Exit(1)
+		}
+		fmt.Print(tok)
 
 	case "help", "--help", "-h":
 		fmt.Printf(`%swx-cli%s — WeChat iLink Bot CLI
@@ -89,6 +161,7 @@ func main() {
   wx accounts                                   List saved profiles
   wx monitor [--profile NAME]                   Daemon: JSON lines per message
   wx send [--profile NAME] --to ID --ctx TOKEN --text MSG
+  wx token [--profile NAME] <user_id>           Print saved context token
   wx [--profile NAME]                           Interactive REPL
 `, cB, cW, cB, cW)
 

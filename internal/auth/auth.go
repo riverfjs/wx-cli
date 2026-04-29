@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
-	"wx-cli/api"
+	"wx-cli/internal/api"
 )
 
 func stateDir() string {
@@ -110,6 +110,30 @@ func LoadSyncBuf(profile string) string {
 func SaveSyncBuf(profile string, buf string) {
 	os.MkdirAll(stateDir(), 0755)
 	os.WriteFile(SyncBufPath(profile), []byte(buf), 0644)
+}
+
+// ── Context token persistence ──
+
+func tokensDir(profile string) string {
+	p := profile
+	if p == "" {
+		p = "default"
+	}
+	return filepath.Join(stateDir(), "tokens", p)
+}
+
+func SaveContextToken(profile, userID, token string) {
+	dir := tokensDir(profile)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, userID), []byte(token), 0600)
+}
+
+func LoadContextToken(profile, userID string) string {
+	data, err := os.ReadFile(filepath.Join(tokensDir(profile), userID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func Login(profile string) (*api.Credential, error) {

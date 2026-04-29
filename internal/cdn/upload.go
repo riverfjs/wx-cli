@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"wx-cli/api"
+	"wx-cli/internal/api"
 )
 
 const cdnBase = "https://novac2c.cdn.weixin.qq.com/c2c"

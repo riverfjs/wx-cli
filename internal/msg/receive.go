@@ -1,69 +1,14 @@
-package daemon
+package msg
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
-	"wx-cli/api"
-	"wx-cli/auth"
-	"wx-cli/cdn"
+	"wx-cli/internal/api"
+	"wx-cli/internal/auth"
 )
-
-type MessageEvent struct {
-	FromUserID   string `json:"from_user_id"`
-	ContextToken string `json:"context_token"`
-	Type         string `json:"type"` // text, image, voice, file, video
-	Text         string `json:"text,omitempty"`
-	FileName     string `json:"file_name,omitempty"`
-	ImagePath    string `json:"image_path,omitempty"`
-	FilePath     string `json:"file_path,omitempty"`
-	Time         string `json:"time"`
-}
-
-func downloadImage(media *api.CDNMedia, from string) string {
-	if media == nil || media.EncryptQueryParam == "" {
-		return ""
-	}
-	data, err := cdn.Download(media)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[wx-monitor] image download: %s\n", err)
-		return ""
-	}
-	dir := filepath.Join(os.TempDir(), "wx-images")
-	os.MkdirAll(dir, 0755)
-	name := fmt.Sprintf("%s_%d.jpg", from[:min(8, len(from))], time.Now().UnixMilli())
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "[wx-monitor] image save: %s\n", err)
-		return ""
-	}
-	return path
-}
-
-func downloadFile(media *api.CDNMedia, fileName string) string {
-	if media == nil || media.EncryptQueryParam == "" {
-		return ""
-	}
-	data, err := cdn.Download(media)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[wx-monitor] file download: %s\n", err)
-		return ""
-	}
-	dir := filepath.Join(os.TempDir(), "wx-files")
-	os.MkdirAll(dir, 0755)
-	if fileName == "" {
-		fileName = fmt.Sprintf("file_%d", time.Now().UnixMilli())
-	}
-	path := filepath.Join(dir, fileName)
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "[wx-monitor] file save: %s\n", err)
-		return ""
-	}
-	return path
-}
 
 func profileHint(profile string) string {
 	if profile != "" {
@@ -72,6 +17,7 @@ func profileHint(profile string) string {
 	return ""
 }
 
+// Monitor runs the long-poll loop, emitting one JSON line per message event.
 func Monitor(cred *api.Credential, profile string) {
 	syncBuf := auth.LoadSyncBuf(profile)
 	errCount := 0
@@ -119,6 +65,12 @@ func Monitor(cred *api.Credential, profile string) {
 			if msg.MessageType == 2 {
 				continue // skip bot's own messages
 			}
+
+			// Persist context token for this user
+			if msg.ContextToken != "" && msg.FromUserID != "" {
+				auth.SaveContextToken(profile, msg.FromUserID, msg.ContextToken)
+			}
+
 			for _, item := range msg.ItemList {
 				ev := MessageEvent{
 					FromUserID:   msg.FromUserID,
@@ -155,6 +107,64 @@ func Monitor(cred *api.Credential, profile string) {
 				data, _ := json.Marshal(ev)
 				fmt.Println(string(data))
 			}
+		}
+	}
+}
+
+// Start runs a long-poll loop calling a handler for each message, used by the interactive REPL.
+type Handler func(msg *api.WeixinMessage)
+
+func Start(cred *api.Credential, profile string, handler Handler, done <-chan struct{}) {
+	syncBuf := auth.LoadSyncBuf(profile)
+	errCount := 0
+
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		resp, err := api.GetUpdates(cred, syncBuf)
+		if err != nil {
+			errCount++
+			if errCount > 10 {
+				fmt.Fprintln(os.Stderr, "[monitor] Too many errors, stopping.")
+				return
+			}
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		code := 0
+		if resp.Ret != nil {
+			code = *resp.Ret
+		} else if resp.ErrCode != nil {
+			code = *resp.ErrCode
+		}
+
+		if code == -14 {
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		if code != 0 {
+			fmt.Fprintf(os.Stderr, "[monitor] Error: ret=%d %s\n", code, resp.ErrMsg)
+			errCount++
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		errCount = 0
+		if resp.GetUpdatesBuf != "" {
+			syncBuf = resp.GetUpdatesBuf
+			auth.SaveSyncBuf(profile, syncBuf)
+		}
+		for _, m := range resp.Msgs {
+			// Persist context token for this user
+			if m.ContextToken != "" && m.FromUserID != "" {
+				auth.SaveContextToken(profile, m.FromUserID, m.ContextToken)
+			}
+			handler(m)
 		}
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"wx-cli/api"
+	"wx-cli/internal/api"
 )
 
 // Download fetches and decrypts a CDN media file.

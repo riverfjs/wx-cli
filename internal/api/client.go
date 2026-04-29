@@ -34,11 +34,11 @@ func randomUin() string {
 
 func headers(token string) map[string]string {
 	h := map[string]string{
-		"Content-Type":              "application/json",
-		"X-WECHAT-UIN":             randomUin(),
-		"iLink-App-Id":             "bot",
-		"iLink-App-ClientVersion":  "1",
-		"AuthorizationType":        "ilink_bot_token",
+		"Content-Type":             "application/json",
+		"X-WECHAT-UIN":            randomUin(),
+		"iLink-App-Id":            "bot",
+		"iLink-App-ClientVersion": "1",
+		"AuthorizationType":       "ilink_bot_token",
 	}
 	if token != "" {
 		h["Authorization"] = "Bearer " + token
