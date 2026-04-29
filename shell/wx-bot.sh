@@ -47,18 +47,34 @@ $WX $PROFILE_FLAG monitor | while IFS= read -r line; do
   type=$(echo "$line" | jq -r '.type // empty')
   text=$(echo "$line" | jq -r '.text // empty')
   ts=$(echo "$line" | jq -r '.time // empty')
+  image_path=$(echo "$line" | jq -r '.image_path // empty')
+  file_path=$(echo "$line" | jq -r '.file_path // empty')
+  file_name=$(echo "$line" | jq -r '.file_name // empty')
 
   [[ -z "$from" || -z "$ctx" ]] && continue
 
   echo "[$ts] [$type] ${from:0:8}...: $text"
 
-  # text and voice transcription only
-  if [[ "$type" != "text" && "$type" != "voice" ]]; then
-    $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" --text "I can only handle text messages for now." &
+  # unsupported types
+  if [[ "$type" == "video" ]]; then
+    $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" --text "I can't handle videos yet." &
     continue
   fi
 
-  [[ -z "$text" ]] && continue
+  # image: need image_path
+  if [[ "$type" == "image" && -z "$image_path" ]]; then
+    $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" --text "Failed to download image." &
+    continue
+  fi
+
+  # file: need file_path
+  if [[ "$type" == "file" && -z "$file_path" ]]; then
+    $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" --text "Failed to download file." &
+    continue
+  fi
+
+  # text/voice need text content (unless image/file)
+  [[ "$type" != "image" && "$type" != "file" && -z "$text" ]] && continue
 
   # built-in commands (no Claude)
   if [[ "$text" == "/help" ]]; then
@@ -85,6 +101,6 @@ Or just send a message to chat." &
   fi
 
   # dispatch to handler (fully detached from pipeline)
-  bash "$HANDLER" "$PROFILE" "$from" "$ctx" "$text" "$ts" </dev/null &
+  bash "$HANDLER" "$PROFILE" "$from" "$ctx" "$text" "$ts" "$image_path" "$file_path" "$file_name" </dev/null &
 
 done

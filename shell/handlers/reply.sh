@@ -1,6 +1,6 @@
 #!/bin/bash
 # Handle a single incoming message: call Claude and reply via wx send.
-# Usage: bash reply.sh <profile> <from_user_id> <context_token> <text> <timestamp>
+# Usage: bash reply.sh <profile> <from_user_id> <context_token> <text> <timestamp> [image_path] [ref_text]
 set -eo pipefail
 
 PROFILE="$1"
@@ -8,6 +8,9 @@ FROM="$2"
 CTX="$3"
 TEXT="$4"
 TS="$5"
+IMAGE_PATH="$6"
+FILE_PATH="$7"
+FILE_NAME="$8"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -39,20 +42,44 @@ Assistant: $a
 "
   fi
 fi
-prompt="${prompt}User: $TEXT"
+# build current message with optional context
+current=""
+if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]]; then
+  current="${current}[User sent an image at $IMAGE_PATH — use the Read tool to view it, then respond.]
+"
+fi
+if [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]]; then
+  current="${current}[User sent a file: ${FILE_NAME:-$(basename "$FILE_PATH")} at $FILE_PATH — use the Read tool to view it, then respond.]
+"
+fi
+if [[ -n "$TEXT" ]]; then
+  current="${current}User: $TEXT"
+elif [[ -n "$IMAGE_PATH" ]]; then
+  current="${current}User: Please analyze this image."
+elif [[ -n "$FILE_PATH" ]]; then
+  current="${current}User: Please analyze this file."
+fi
+prompt="${prompt}${current}"
 
 # thinking timer
 ( sleep 5 && $WX $PF send --to "$FROM" --ctx "$CTX" --text "Thinking..." ) 2>/dev/null &
 tpid=$!
 
 # call claude
-reply=$(claude --print \
-  --model claude-sonnet-4-6 \
-  --permission-mode bypassPermissions \
-  --append-system-prompt "$role" \
-  -p "$prompt" </dev/null 2>/tmp/wx-claude-err.log)
+CLAUDE_ARGS=(--print --model claude-sonnet-4-6 --permission-mode bypassPermissions --append-system-prompt "$role" -p "$prompt")
+if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]]; then
+  CLAUDE_ARGS+=(--add-dir "$(dirname "$IMAGE_PATH")")
+fi
+if [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]]; then
+  CLAUDE_ARGS+=(--add-dir "$(dirname "$FILE_PATH")")
+fi
+reply=$(claude "${CLAUDE_ARGS[@]}" </dev/null 2>/tmp/wx-claude-err.log)
 
 kill $tpid 2>/dev/null || true; wait $tpid 2>/dev/null || true
+
+# cleanup temp files
+[[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]] && rm -f "$IMAGE_PATH"
+[[ -n "$FILE_PATH" && -f "$FILE_PATH" ]] && rm -f "$FILE_PATH"
 
 if [[ -n "$reply" ]]; then
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "$reply"

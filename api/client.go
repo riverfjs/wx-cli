@@ -34,10 +34,11 @@ func randomUin() string {
 
 func headers(token string) map[string]string {
 	h := map[string]string{
-		"Content-Type":      "application/json",
-		"X-WECHAT-UIN":     randomUin(),
-		"iLink-App-Id":     "bot",
-		"AuthorizationType": "ilink_bot_token",
+		"Content-Type":              "application/json",
+		"X-WECHAT-UIN":             randomUin(),
+		"iLink-App-Id":             "bot",
+		"iLink-App-ClientVersion":  "1",
+		"AuthorizationType":        "ilink_bot_token",
 	}
 	if token != "" {
 		h["Authorization"] = "Bearer " + token
@@ -63,6 +64,7 @@ func Post(baseURL, endpoint string, body interface{}, token string) ([]byte, err
 func Get(url string) ([]byte, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("iLink-App-Id", "bot")
+	req.Header.Set("iLink-App-ClientVersion", "1")
 	resp, err := Client.Do(req)
 	if err != nil {
 		return nil, err

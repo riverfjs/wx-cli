@@ -61,6 +61,7 @@ type WeixinMessage struct {
 	FromUserID   string         `json:"from_user_id"`
 	ToUserID     string         `json:"to_user_id,omitempty"`
 	ClientID     string         `json:"client_id,omitempty"`
+	CreateTimeMs int64          `json:"create_time_ms,omitempty"`
 	MessageType  int            `json:"message_type,omitempty"`
 	MessageState int            `json:"message_state,omitempty"`
 	ItemList     []*MessageItem `json:"item_list,omitempty"`
