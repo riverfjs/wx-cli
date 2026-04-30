@@ -6,21 +6,23 @@ WX="$WX_DIR/bin/wx"
 NGROK="$HOME/.local/bin/ngrok"
 STATE_DIR="$HOME/.wx-cli"
 LOG_DIR="$STATE_DIR/logs"
-PID_DIR="$STATE_DIR"
+PID_DIR="$STATE_DIR/pids"
+SERVE_DIR="$STATE_DIR/serve"
 SERVE_LOG="$LOG_DIR/serve.log"
 SERVE_PID="$PID_DIR/serve.pid"
 NGROK_LOG="$LOG_DIR/ngrok.log"
 NGROK_PID="$PID_DIR/ngrok.pid"
-TOKEN_FILE="$STATE_DIR/wx_token"
-mkdir -p "$LOG_DIR"
+TOKEN_FILE="$SERVE_DIR/wx_token"
+mkdir -p "$LOG_DIR" "$PID_DIR" "$SERVE_DIR"
 PORT="${PORT:-8080}"
 
 usage() {
-  echo "用法: bash serve.sh {start|stop|status|url|log} [--port PORT]"
+  echo "用法: bash serve.sh {start|stop|status|url|log|restart-bots|stop-bots} [--port PORT]"
   echo ""
   echo "环境变量:"
   echo "  WX_APPID   微信测试号 AppID (异步回复需要)"
   echo "  WX_SECRET  微信测试号 Secret (异步回复需要)"
+  echo "  WX_ROOT    Root 用户 OpenID (模板管理权限)"
   echo "  PORT       监听端口 (默认 8080)"
   echo ""
   echo "示例:"
@@ -95,6 +97,7 @@ case "$ACTION" in
     SERVE_ARGS="serve --port $PORT --wx-token $WX_TOKEN"
     [[ -n "$WX_APPID" ]] && SERVE_ARGS="$SERVE_ARGS --wx-appid $WX_APPID"
     [[ -n "$WX_SECRET" ]] && SERVE_ARGS="$SERVE_ARGS --wx-secret $WX_SECRET"
+    [[ -n "$WX_ROOT" ]] && SERVE_ARGS="$SERVE_ARGS --wx-root $WX_ROOT"
     nohup $WX $SERVE_ARGS >> "$SERVE_LOG" 2>&1 &
     echo $! > "$SERVE_PID"
     echo "[serve] 已启动 (PID $!, port $PORT) — 日志: $SERVE_LOG"
@@ -171,6 +174,33 @@ case "$ACTION" in
     echo ""
     echo "=== ngrok ==="
     tail -10 "$NGROK_LOG" 2>/dev/null || echo "(无日志)"
+    ;;
+
+  restart-bots)
+    BOT_SH="$WX_DIR/shell/bot.sh"
+    count=0
+    for f in "$PID_DIR"/*.pid; do
+      [[ ! -f "$f" ]] && continue
+      name=$(basename "$f" .pid)
+      [[ "$name" == "serve" || "$name" == "ngrok" ]] && continue
+      bash "$BOT_SH" stop "$name" 2>&1
+      bash "$BOT_SH" start "$name" 2>&1
+      ((count++))
+    done
+    echo "重启完成: $count 个 bot"
+    ;;
+
+  stop-bots)
+    BOT_SH="$WX_DIR/shell/bot.sh"
+    count=0
+    for f in "$PID_DIR"/*.pid; do
+      [[ ! -f "$f" ]] && continue
+      name=$(basename "$f" .pid)
+      [[ "$name" == "serve" || "$name" == "ngrok" ]] && continue
+      bash "$BOT_SH" stop "$name" 2>&1
+      ((count++))
+    done
+    echo "已停止: $count 个 bot"
     ;;
 
   *)

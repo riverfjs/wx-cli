@@ -5,8 +5,8 @@ WX_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SHELL_DIR="$WX_DIR/shell"
 STATE_DIR="$HOME/.wx-cli"
 LOG_DIR="$STATE_DIR/logs"
-PID_DIR="$STATE_DIR"
-mkdir -p "$LOG_DIR"
+PID_DIR="$STATE_DIR/pids"
+mkdir -p "$LOG_DIR" "$PID_DIR"
 
 usage() {
   echo "用法: bash bot.sh {start|stop|status|log} <profile>"
@@ -30,7 +30,8 @@ case "$ACTION" in
       echo "[$PROFILE] 已在运行 (PID $(cat "$PID_FILE"))"
       exit 0
     fi
-    nohup bash -c "
+    WX_PROFILE="$PROFILE" nohup bash -c "
+      export WX_PROFILE=\"$PROFILE\"
       bash \"$SHELL_DIR/wx-bot.sh\" \"$PROFILE\"
       # bot exited, check if session expired
       if tail -5 \"$LOG_FILE\" | grep -q 'session expired'; then

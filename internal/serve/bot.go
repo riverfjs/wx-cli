@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,9 +9,13 @@ import (
 	"strings"
 )
 
-func serveProfilesPath() string {
+func serveDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".wx-cli", "serve_profiles")
+	return filepath.Join(home, ".wx-cli", "serve")
+}
+
+func serveProfilesPath() string {
+	return filepath.Join(serveDir(), "profiles")
 }
 
 func saveServeProfile(profile string) {
@@ -52,6 +57,55 @@ func isServeProfile(profile string) bool {
 	return false
 }
 
+// ── template persistence ──
+
+func templatesPath() string {
+	return filepath.Join(serveDir(), "templates.json")
+}
+
+func loadTemplates() map[string]string {
+	data, err := os.ReadFile(templatesPath())
+	if err != nil {
+		return make(map[string]string)
+	}
+	var m map[string]string
+	json.Unmarshal(data, &m)
+	if m == nil {
+		return make(map[string]string)
+	}
+	return m
+}
+
+func saveTemplates(m map[string]string) {
+	os.MkdirAll(filepath.Dir(templatesPath()), 0755)
+	data, _ := json.MarshalIndent(m, "", "  ")
+	os.WriteFile(templatesPath(), data, 0600)
+}
+
+func getTemplate(name string) string {
+	return loadTemplates()[name]
+}
+
+func setTemplate(name, templateID string) {
+	m := loadTemplates()
+	m[name] = templateID
+	saveTemplates(m)
+}
+
+func delTemplate(name string) bool {
+	m := loadTemplates()
+	if _, ok := m[name]; !ok {
+		return false
+	}
+	delete(m, name)
+	saveTemplates(m)
+	return true
+}
+
+func listTemplates() map[string]string {
+	return loadTemplates()
+}
+
 func botScript() string {
 	exe, _ := os.Executable()
 	return filepath.Join(filepath.Dir(filepath.Dir(exe)), "shell", "bot.sh")
@@ -66,4 +120,16 @@ func startBot(profile string) error {
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func stopBot(profile string) error {
+	cmd := exec.Command("bash", botScript(), "stop", profile)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func restartBot(profile string) error {
+	stopBot(profile)
+	return startBot(profile)
 }

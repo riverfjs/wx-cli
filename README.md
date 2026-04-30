@@ -19,6 +19,7 @@ WeChat personal account bot CLI, built on Tencent's official [iLink Bot API](htt
 git clone <repo-url> ~/.claude/skills/wx-cli
 cd ~/.claude/skills/wx-cli
 bash shell/build.sh                        # compile bin/wx
+cp -r wx-push ~/.claude/skills/wx-push     # install wx-push skill
 bin/wx --profile mybot login               # QR scan login
 bash shell/bot.sh start mybot              # start Claude auto-reply bot
 ```
@@ -107,20 +108,26 @@ WX_APPID=你的appid WX_SECRET=你的secret bash shell/serve.sh start
 # 2. 配置测试号
 #    打开: https://mp.weixin.qq.com/debug/cgi-bin/sandboxinfo?action=showinfo&t=sandbox/index
 #    URL:   bash shell/serve.sh url 输出的地址
-#    Token: cat ~/.wx-cli/wx_token
+#    Token: cat ~/.wx-cli/serve/wx_token
 ```
 
 > ngrok 免费版每次重启 URL 会变，需重新到测试号页面更新。Token 不变。
 
 ### Commands (微信对话)
 
-| 命令 | 功能 |
-|------|------|
-| `登录` | 获取 iLink 登录链接，授权后自动启动 bot |
-| `状态` | 查看登录状态 |
-| `帮助` | 显示命令列表 |
+| 命令 | 权限 | 功能 |
+|------|------|------|
+| `登录` | 所有人 | 获取 iLink 登录链接，授权后自动启动 bot |
+| `状态` | 所有人 | 查看登录状态 |
+| `帮助` | 所有人 | 显示命令列表 |
+| `服务` | root | 服务运行状态 |
+| `活跃` | root | 活跃 Bot 列表 |
+| `历史` | root | 最新聊天记录 |
+| `重启` | root | 重启所有 Bot |
+| `关闭` | root | 停止所有 Bot |
+| `模板 add/list/del` | root | 推送模板管理 |
 
-每个用户的 OpenID 自动作为 profile，互相隔离。
+每个用户的 OpenID 自动作为 profile，互相隔离。root 用户通过 `WX_ROOT` 环境变量指定。
 
 ### Session-expire auto-reconnect
 
@@ -128,14 +135,33 @@ Bot 检测到会话过期（code -14）时自动通知 serve，serve 向用户�
 
 serve 只管理通过公众号登录的 profile。serve 重启不影响已运行的 bot。
 
+### Push notifications
+
+通过 `wx-push` skill 推送消息（模板或纯文本）。身份由 `WX_PROFILE` 环境变量决定，bot 进程自动继承，crontab 命令前缀设置。
+
+```bash
+# bot 进程内（WX_PROFILE 自动继承）
+bash ~/.claude/skills/wx-push/scripts/push.sh --template signal --k1 "AAPL" --k2 "买入" --k3 "策略B" --k4 "14:30"
+
+# crontab（手动设 WX_PROFILE）
+WX_PROFILE=oiNG73xxx python3 ~/.claude/skills/signal-monitor/scripts/scan.py AAPL.US --notify push
+
+# root 广播
+bash ~/.claude/skills/wx-push/scripts/push.sh --all --text "系统维护通知"
+```
+
+安装 push skill: `cp -r wx-push ~/.claude/skills/wx-push`
+
 ### Management
 
 ```bash
 bash shell/serve.sh start          # 启动 serve + ngrok
-bash shell/serve.sh stop           # 停止
+bash shell/serve.sh stop           # 停止 serve + ngrok
 bash shell/serve.sh status         # 运行状态
 bash shell/serve.sh url            # 当前公网地址
 bash shell/serve.sh log            # 查看日志
+bash shell/serve.sh restart-bots   # 重启所有 bot
+bash shell/serve.sh stop-bots      # 停止所有 bot
 ```
 
 ## Architecture
@@ -150,15 +176,19 @@ internal/
   msg/                 Send text/image/file/video + monitor loop
   serve/               WeChat webhook server
     serve.go           Config + HTTP routing
-    handler.go         Command dispatch + login/relogin flow
-    wechat.go          XML types, signature, passive/async reply, access_token
-    bot.go             Bot process management + serve profile persistence
+    handler.go         Command dispatch + login/relogin/push flow
+    wechat.go          XML types, signature, passive/async/template reply
+    bot.go             Bot process management + serve profile/template persistence
+    state.go           Process/bot status + chat history queries
 shell/
   build.sh             Build script
   bot.sh               Bot process management (start/stop/status/log)
   serve.sh             Serve + ngrok management
   wx-bot.sh            Claude auto-reply daemon
   handlers/reply.sh    Per-message handler
+wx-push/               Push notification skill (install to ~/.claude/skills/wx-push)
+  SKILL.md             Skill definition
+  scripts/push.sh      Push wrapper (WX_PROFILE env + wx_token auth)
 prompts/
   system_role.md       System prompt template
 ```
@@ -168,14 +198,15 @@ prompts/
 ```
 ~/.wx-cli/
   accounts/{profile}.json       Credentials
-  sync_buf_{profile}            Long-poll cursor
+  sync/{profile}                Long-poll cursor
   tokens/{profile}/{uid}        Context token per user
   history/{profile}/{uid}.json  Conversation history per user
-  wx_token                      WeChat webhook token (auto-generated)
-  serve_profiles                Serve-managed profiles (one OpenID per line)
-  {profile}.pid                 Bot PID files
-  serve.pid / ngrok.pid         Serve/ngrok PID files
-  logs/                         All logs
+  pids/                         All PID files
+  logs/                         All log files
+  serve/
+    wx_token                    WeChat webhook token (auto-generated)
+    templates.json              Registered push templates
+    profiles                    Serve-managed profiles (one OpenID per line)
 ```
 
 ## Protocol notes

@@ -85,7 +85,7 @@ func envDefault(val, envKey string) string {
 	return os.Getenv(envKey)
 }
 
-func parseServeArgs(args []string) (port int, wxToken, wxAppID, wxSecret string) {
+func parseServeArgs(args []string) (port int, wxToken, wxAppID, wxSecret, wxRoot string) {
 	port = 8080
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -104,6 +104,10 @@ func parseServeArgs(args []string) (port int, wxToken, wxAppID, wxSecret string)
 		case "--wx-secret":
 			if i+1 < len(args) {
 				wxSecret = args[i+1]; i++
+			}
+		case "--wx-root":
+			if i+1 < len(args) {
+				wxRoot = args[i+1]; i++
 			}
 		}
 	}
@@ -194,19 +198,21 @@ func main() {
 		fmt.Print(tok)
 
 	case "serve":
-		port, wxToken, wxAppID, wxSecret := parseServeArgs(args[1:])
+		port, wxToken, wxAppID, wxSecret, wxRoot := parseServeArgs(args[1:])
 		wxToken = envDefault(wxToken, "WX_TOKEN")
 		wxAppID = envDefault(wxAppID, "WX_APPID")
 		wxSecret = envDefault(wxSecret, "WX_SECRET")
+		wxRoot = envDefault(wxRoot, "WX_ROOT")
 		if wxToken == "" {
 			fmt.Fprintln(os.Stderr, "WeChat token required. Use --wx-token or WX_TOKEN env var")
 			os.Exit(1)
 		}
 		serve.Run(serve.Config{
-			Port:     port,
-			WxToken:  wxToken,
-			WxAppID:  wxAppID,
-			WxSecret: wxSecret,
+			Port:       port,
+			WxToken:    wxToken,
+			WxAppID:    wxAppID,
+			WxSecret:   wxSecret,
+			RootOpenID: wxRoot,
 		})
 
 	case "help", "--help", "-h":

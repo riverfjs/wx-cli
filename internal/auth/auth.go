@@ -74,7 +74,7 @@ func ListAccounts() []AccountInfo {
 }
 
 func SyncBufPath(profile string) string {
-	return filepath.Join(stateDir(), "sync_buf_"+profile)
+	return filepath.Join(stateDir(), "sync", profile)
 }
 
 func LoadSyncBuf(profile string) string {
@@ -86,8 +86,9 @@ func LoadSyncBuf(profile string) string {
 }
 
 func SaveSyncBuf(profile string, buf string) {
-	os.MkdirAll(stateDir(), 0755)
-	os.WriteFile(SyncBufPath(profile), []byte(buf), 0644)
+	path := SyncBufPath(profile)
+	os.MkdirAll(filepath.Dir(path), 0755)
+	os.WriteFile(path, []byte(buf), 0644)
 }
 
 // ── Context token persistence ──

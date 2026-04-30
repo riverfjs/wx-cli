@@ -27,6 +27,8 @@ var (
 
 const helpText = "可用命令:\n登录 — 触发 iLink 登录\n状态 — 查看登录状态\n帮助 — 显示本帮助"
 
+const rootHelpText = "管理命令 (root):\n服务 — 服务状态\n活跃 — 活跃 Bot 列表\n历史 — 最新聊天记录\n重启 — 重启所有 Bot\n关闭 — 停止所有 Bot\n模板 add/list/del — 模板管理"
+
 func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -57,13 +59,59 @@ func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	cmd := strings.ToLower(parts[0])
 	profile := msg.FromUserName
 
+	isRoot := cfg.RootOpenID != "" && msg.FromUserName == cfg.RootOpenID
+
 	switch cmd {
 	case "登录", "login":
 		handleLogin(w, &msg, cfg, profile)
 	case "状态", "status":
 		handleStatus(w, &msg, profile)
+	case "服务", "service":
+		if !isRoot {
+			replyPassive(w, &msg, "无权限")
+			return
+		}
+		handleService(w, &msg)
+	case "活跃", "bots":
+		if !isRoot {
+			replyPassive(w, &msg, "无权限")
+			return
+		}
+		handleActiveBots(w, &msg)
+	case "历史", "chat":
+		if !isRoot {
+			replyPassive(w, &msg, "无权限")
+			return
+		}
+		var target string
+		if len(parts) >= 2 {
+			target = strings.TrimSpace(parts[1])
+		}
+		handleChatHistory(w, &msg, target)
+	case "重启", "restart":
+		if !isRoot {
+			replyPassive(w, &msg, "无权限")
+			return
+		}
+		handleRestartBots(w, &msg)
+	case "关闭", "stopall":
+		if !isRoot {
+			replyPassive(w, &msg, "无权限")
+			return
+		}
+		handleStopBots(w, &msg)
+	case "模板", "template":
+		if !isRoot {
+			replyPassive(w, &msg, "无权限")
+			return
+		}
+		handleTemplate(w, &msg, content)
 	case "帮助", "help":
-		replyPassive(w, &msg, helpText)
+		h := helpText
+		if isRoot {
+			h += "\n\n" + rootHelpText
+		}
+		replyPassive(w, &msg, h)
 	default:
 		replyPassive(w, &msg, helpText)
 	}
@@ -159,6 +207,227 @@ func handleStatus(w http.ResponseWriter, msg *wxMessage, profile string) {
 		loginTime = t.In(time.FixedZone("CST", 8*3600)).Format("2006-01-02 15:04:05")
 	}
 	replyPassive(w, msg, fmt.Sprintf("Bot ID: %s\n登录时间: %s", cred.BotID, loginTime))
+}
+
+func handleService(w http.ResponseWriter, msg *wxMessage) {
+	fmtProc := func(p ProcessInfo) string {
+		if !p.Alive {
+			return p.Name + ": 未运行"
+		}
+		return fmt.Sprintf("%s: 运行中 (PID %d)", p.Name, p.PID)
+	}
+
+	lines := []string{
+		fmtProc(checkProcess("serve")),
+		fmtProc(checkProcess("ngrok")),
+		fmt.Sprintf("管理 profile 数: %d", len(loadServeProfiles())),
+		fmt.Sprintf("注册模板数: %d", len(listTemplates())),
+	}
+	replyPassive(w, msg, strings.Join(lines, "\n"))
+}
+
+func handleActiveBots(w http.ResponseWriter, msg *wxMessage) {
+	bots := listActiveBots()
+	if len(bots) == 0 {
+		replyPassive(w, msg, "无活跃 Bot")
+		return
+	}
+	var lines []string
+	for _, b := range bots {
+		lines = append(lines, fmt.Sprintf("%s (PID %d)", shortID(b.Profile), b.PID))
+	}
+	replyPassive(w, msg, fmt.Sprintf("活跃 Bot (%d):\n%s", len(lines), strings.Join(lines, "\n")))
+}
+
+func handleChatHistory(w http.ResponseWriter, msg *wxMessage, target string) {
+	var profiles []string
+	if target != "" {
+		profiles = []string{target}
+	} else {
+		for _, b := range listActiveBots() {
+			profiles = append(profiles, b.Profile)
+		}
+	}
+	if len(profiles) == 0 {
+		replyPassive(w, msg, "无活跃 Bot 或未指定 profile")
+		return
+	}
+
+	var lines []string
+	for _, profile := range profiles {
+		chat := latestChat(profile)
+		label := shortID(profile)
+		if chat == nil {
+			lines = append(lines, fmt.Sprintf("[%s] 无聊天记录", label))
+			continue
+		}
+		ago := time.Since(chat.ModTime).Truncate(time.Minute)
+		lines = append(lines, fmt.Sprintf("[%s] %s (%s前)\nQ: %s\nA: %s",
+			label, shortID(chat.UserID), ago,
+			truncate(chat.Question, 50), truncate(chat.Answer, 80)))
+	}
+	replyPassive(w, msg, strings.Join(lines, "\n\n"))
+}
+
+func handleRestartBots(w http.ResponseWriter, msg *wxMessage) {
+	bots := listActiveBots()
+	if len(bots) == 0 {
+		replyPassive(w, msg, "无活跃 Bot")
+		return
+	}
+	var lines []string
+	for _, b := range bots {
+		if err := restartBot(b.Profile); err != nil {
+			lines = append(lines, fmt.Sprintf("%s: 重启失败 %s", shortID(b.Profile), err))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s: 已重启", shortID(b.Profile)))
+		}
+	}
+	replyPassive(w, msg, fmt.Sprintf("重启 %d 个 Bot:\n%s", len(bots), strings.Join(lines, "\n")))
+}
+
+func handleStopBots(w http.ResponseWriter, msg *wxMessage) {
+	bots := listActiveBots()
+	if len(bots) == 0 {
+		replyPassive(w, msg, "无活跃 Bot")
+		return
+	}
+	var lines []string
+	for _, b := range bots {
+		if err := stopBot(b.Profile); err != nil {
+			lines = append(lines, fmt.Sprintf("%s: 停止失败 %s", shortID(b.Profile), err))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s: 已停止", shortID(b.Profile)))
+		}
+	}
+	replyPassive(w, msg, fmt.Sprintf("停止 %d 个 Bot:\n%s", len(bots), strings.Join(lines, "\n")))
+}
+
+func handleTemplate(w http.ResponseWriter, msg *wxMessage, content string) {
+	parts := strings.Fields(content)
+	if len(parts) < 2 {
+		replyPassive(w, msg, "用法:\n模板 add <name> <id>\n模板 list\n模板 del <name>")
+		return
+	}
+
+	action := strings.ToLower(parts[1])
+	switch action {
+	case "add":
+		if len(parts) < 4 {
+			replyPassive(w, msg, "用法: 模板 add <name> <template_id>")
+			return
+		}
+		setTemplate(parts[2], parts[3])
+		replyPassive(w, msg, fmt.Sprintf("模板已注册: %s", parts[2]))
+	case "list":
+		tpls := listTemplates()
+		if len(tpls) == 0 {
+			replyPassive(w, msg, "无已注册模板")
+			return
+		}
+		var lines []string
+		for name, id := range tpls {
+			lines = append(lines, fmt.Sprintf("%s: %s", name, id[:8]+"..."))
+		}
+		replyPassive(w, msg, strings.Join(lines, "\n"))
+	case "del":
+		if len(parts) < 3 {
+			replyPassive(w, msg, "用法: 模板 del <name>")
+			return
+		}
+		if delTemplate(parts[2]) {
+			replyPassive(w, msg, fmt.Sprintf("模板已删除: %s", parts[2]))
+		} else {
+			replyPassive(w, msg, fmt.Sprintf("模板不存在: %s", parts[2]))
+		}
+	default:
+		replyPassive(w, msg, "用法:\n模板 add <name> <id>\n模板 list\n模板 del <name>")
+	}
+}
+
+func handlePush(w http.ResponseWriter, r *http.Request, cfg *Config) {
+	r.ParseForm()
+	token := r.FormValue("token")
+	profile := r.FormValue("profile")
+	broadcastAll := r.FormValue("all") == "1"
+	text := r.FormValue("text")
+	tplName := r.FormValue("template")
+
+	if token == "" {
+		http.Error(w, "missing token", http.StatusUnauthorized)
+		return
+	}
+
+	isRoot := token == cfg.WxToken
+
+	if !isRoot {
+		http.Error(w, "invalid token", http.StatusForbidden)
+		return
+	}
+
+	// determine target profiles
+	var targets []string
+	if broadcastAll {
+		targets = loadServeProfiles()
+		if len(targets) == 0 {
+			http.Error(w, "no serve profiles", http.StatusBadRequest)
+			return
+		}
+	} else if profile != "" {
+		if !isServeProfile(profile) && profile != cfg.RootOpenID {
+			http.Error(w, "not managed by serve", http.StatusForbidden)
+			return
+		}
+		targets = []string{profile}
+	} else {
+		http.Error(w, "missing profile or --all", http.StatusBadRequest)
+		return
+	}
+
+	// collect message content
+	var keywords []string
+	var templateID string
+	if tplName != "" {
+		templateID = getTemplate(tplName)
+		if templateID == "" {
+			http.Error(w, "template not found: "+tplName, http.StatusBadRequest)
+			return
+		}
+		for i := 1; ; i++ {
+			v := r.FormValue(fmt.Sprintf("k%d", i))
+			if v == "" {
+				break
+			}
+			keywords = append(keywords, v)
+		}
+		if len(keywords) == 0 {
+			http.Error(w, "missing keyword params (k1, k2, ...)", http.StatusBadRequest)
+			return
+		}
+	} else if text == "" {
+		http.Error(w, "missing template or text", http.StatusBadRequest)
+		return
+	}
+
+	// send to all targets
+	for _, t := range targets {
+		if templateID != "" {
+			if err := sendTemplate(cfg, t, templateID, keywords); err != nil {
+				log.Printf("[wx-serve] push template failed for %s: %s", truncate(t, 12), err)
+			}
+		} else {
+			sendAsync(cfg, t, text)
+		}
+	}
+
+	label := profile
+	if broadcastAll {
+		label = fmt.Sprintf("all(%d)", len(targets))
+	} else if len(label) > 12 {
+		label = label[:12] + "..."
+	}
+	log.Printf("[wx-serve] push to=%s tpl=%s", label, tplName)
+	fmt.Fprint(w, "ok")
 }
 
 func pollLogin(cfg *Config, sess *loginSession, qrcode string) {

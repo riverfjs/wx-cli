@@ -131,6 +131,50 @@ func sendAsync(cfg *Config, toUser, content string) {
 	}
 }
 
+func sendTemplate(cfg *Config, toUser, templateID string, keywords []string) error {
+	if cfg.WxAppID == "" || cfg.WxSecret == "" {
+		return fmt.Errorf("appid/secret not configured")
+	}
+
+	token, err := getAccessToken(cfg)
+	if err != nil {
+		return err
+	}
+
+	data_fields := make(map[string]interface{})
+	for i, v := range keywords {
+		data_fields[fmt.Sprintf("keyword%d", i+1)] = map[string]string{"value": v}
+	}
+
+	payload := map[string]interface{}{
+		"touser":      toUser,
+		"template_id": templateID,
+		"data":        data_fields,
+	}
+	data, _ := json.Marshal(payload)
+
+	resp, err := http.Post(
+		"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token="+token,
+		"application/json",
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	body, _ := io.ReadAll(resp.Body)
+	json.Unmarshal(body, &result)
+	if result.ErrCode != 0 {
+		return fmt.Errorf("%d %s", result.ErrCode, result.ErrMsg)
+	}
+	return nil
+}
+
 func getAccessToken(cfg *Config) (string, error) {
 	tokenMu.Lock()
 	defer tokenMu.Unlock()

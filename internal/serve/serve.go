@@ -7,10 +7,11 @@ import (
 )
 
 type Config struct {
-	Port     int
-	WxToken  string
-	WxAppID  string
-	WxSecret string
+	Port       int
+	WxToken    string
+	WxAppID    string
+	WxSecret   string
+	RootOpenID string
 }
 
 func Run(cfg Config) {
@@ -20,8 +21,19 @@ func Run(cfg Config) {
 	if cfg.WxAppID == "" || cfg.WxSecret == "" {
 		log.Println("[wx-serve] wx-appid/wx-secret not set, async replies disabled")
 	}
+	if cfg.RootOpenID != "" {
+		log.Printf("[wx-serve] root user: %s", cfg.RootOpenID)
+	}
 
 	go cleanupRecentMsgs()
+
+	http.HandleFunc("/push", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		handlePush(w, r, &cfg)
+	})
 
 	http.HandleFunc("/relogin", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
