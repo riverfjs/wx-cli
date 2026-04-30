@@ -27,14 +27,18 @@ func parseGlobal(args []string) (profile string, rest []string) {
 	return
 }
 
+func requireProfile(profile string) {
+	if profile == "" {
+		fmt.Fprintln(os.Stderr, "Profile required. Usage: wx --profile NAME <command>")
+		os.Exit(1)
+	}
+}
+
 func requireCred(profile string) *api.Credential {
+	requireProfile(profile)
 	cred := auth.LoadCredential(profile)
 	if cred == nil {
-		if profile != "" {
-			fmt.Fprintf(os.Stderr, "Profile '%s' not found. Run: wx login --profile %s\n", profile, profile)
-		} else {
-			fmt.Fprintln(os.Stderr, "Not logged in. Run: wx login")
-		}
+		fmt.Fprintf(os.Stderr, "Profile '%s' not found. Run: wx login --profile %s\n", profile, profile)
 		os.Exit(1)
 	}
 	return cred
@@ -76,6 +80,7 @@ func main() {
 	profile, args := parseGlobal(os.Args[1:])
 
 	if len(args) == 0 {
+		requireProfile(profile)
 		cred := auth.LoadCredential(profile)
 		if cred == nil {
 			fmt.Println("No saved account. Starting login...\n")
@@ -92,6 +97,7 @@ func main() {
 
 	switch args[0] {
 	case "login", "auth":
+		requireProfile(profile)
 		if _, err := auth.Login(profile); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			os.Exit(1)
@@ -157,15 +163,16 @@ func main() {
 		fmt.Printf(`%swx-cli%s — WeChat iLink Bot CLI
 
 %sUsage:%s
-  wx login [--profile NAME]                     QR code login
+  wx --profile NAME login                       QR code login
   wx accounts                                   List saved profiles
-  wx monitor [--profile NAME]                   Daemon: JSON lines per message
-  wx send [--profile NAME] --to ID --ctx TOKEN --text MSG
-  wx token [--profile NAME] <user_id>           Print saved context token
-  wx [--profile NAME]                           Interactive REPL
+  wx --profile NAME monitor                     Daemon: JSON lines per message
+  wx --profile NAME send --to ID --ctx TOKEN --text MSG
+  wx --profile NAME token <user_id>             Print saved context token
+  wx --profile NAME                             Interactive REPL
 `, cB, cW, cB, cW)
 
 	default:
+		requireProfile(profile)
 		cred := auth.LoadCredential(profile)
 		if cred == nil {
 			fmt.Println("No saved account. Starting login...\n")

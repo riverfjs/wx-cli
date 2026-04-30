@@ -22,50 +22,31 @@ func accountsDir() string {
 }
 
 func SaveCredential(cred *api.Credential, profile string) string {
+	if profile == "" {
+		fmt.Fprintln(os.Stderr, "Profile required. Run: wx login --profile NAME")
+		os.Exit(1)
+	}
 	dir := accountsDir()
 	os.MkdirAll(dir, 0755)
-	name := profile
-	if name == "" {
-		name = cred.BotID
-	}
-	if name == "" {
-		name = "default"
-	}
-	path := filepath.Join(dir, name+".json")
+	path := filepath.Join(dir, profile+".json")
 	data, _ := json.MarshalIndent(cred, "", "  ")
 	os.WriteFile(path, data, 0600)
 	return path
 }
 
 func LoadCredential(profile string) *api.Credential {
+	if profile == "" {
+		return nil
+	}
 	dir := accountsDir()
-	if profile != "" {
-		path := filepath.Join(dir, profile+".json")
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		var c api.Credential
-		json.Unmarshal(data, &c)
-		return &c
+	path := filepath.Join(dir, profile+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
 	}
-	entries, _ := os.ReadDir(dir)
-	var best *api.Credential
-	var bestTime string
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		data, _ := os.ReadFile(filepath.Join(dir, e.Name()))
-		var c api.Credential
-		json.Unmarshal(data, &c)
-		if c.LoginTime > bestTime {
-			bestTime = c.LoginTime
-			cc := c
-			best = &cc
-		}
-	}
-	return best
+	var c api.Credential
+	json.Unmarshal(data, &c)
+	return &c
 }
 
 type AccountInfo struct {
@@ -93,10 +74,7 @@ func ListAccounts() []AccountInfo {
 }
 
 func SyncBufPath(profile string) string {
-	if profile != "" {
-		return filepath.Join(stateDir(), "sync_buf_"+profile)
-	}
-	return filepath.Join(stateDir(), "sync_buf")
+	return filepath.Join(stateDir(), "sync_buf_"+profile)
 }
 
 func LoadSyncBuf(profile string) string {
@@ -115,11 +93,7 @@ func SaveSyncBuf(profile string, buf string) {
 // ── Context token persistence ──
 
 func tokensDir(profile string) string {
-	p := profile
-	if p == "" {
-		p = "default"
-	}
-	return filepath.Join(stateDir(), "tokens", p)
+	return filepath.Join(stateDir(), "tokens", profile)
 }
 
 func SaveContextToken(profile, userID, token string) {
