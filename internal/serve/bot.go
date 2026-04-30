@@ -1,12 +1,15 @@
 package serve
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"sync"
 )
 
 func serveDir() string {
@@ -14,47 +17,65 @@ func serveDir() string {
 	return filepath.Join(home, ".wx-cli", "serve")
 }
 
-func serveProfilesPath() string {
-	return filepath.Join(serveDir(), "profiles")
+// ── OpenID → hash alias mapping ──
+
+var (
+	openIDMap   = make(map[string]string) // alias → openID
+	openIDMapMu sync.RWMutex
+)
+
+func hashOpenID(openID string) string {
+	h := sha256.Sum256([]byte(openID))
+	return hex.EncodeToString(h[:])[:12]
 }
 
-func saveServeProfile(profile string) {
-	path := serveProfilesPath()
-	os.MkdirAll(filepath.Dir(path), 0755)
-	for _, p := range loadServeProfiles() {
-		if p == profile {
-			return
-		}
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	f.WriteString(profile + "\n")
+func registerOpenID(openID string) string {
+	alias := hashOpenID(openID)
+	openIDMapMu.Lock()
+	openIDMap[alias] = openID
+	openIDMapMu.Unlock()
+	saveMapping()
+	return alias
 }
 
-func loadServeProfiles() []string {
-	data, err := os.ReadFile(serveProfilesPath())
-	if err != nil {
-		return nil
-	}
+func resolveAlias(alias string) (openID string, ok bool) {
+	openIDMapMu.RLock()
+	defer openIDMapMu.RUnlock()
+	openID, ok = openIDMap[alias]
+	return
+}
+
+func listManagedAliases() []string {
+	openIDMapMu.RLock()
+	defer openIDMapMu.RUnlock()
 	var out []string
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		if line != "" {
-			out = append(out, line)
-		}
+	for alias := range openIDMap {
+		out = append(out, alias)
 	}
 	return out
 }
 
-func isServeProfile(profile string) bool {
-	for _, p := range loadServeProfiles() {
-		if p == profile {
-			return true
-		}
+func mappingPath() string {
+	return filepath.Join(serveDir(), "mapping.json")
+}
+
+func loadMapping() {
+	data, err := os.ReadFile(mappingPath())
+	if err != nil {
+		return
 	}
-	return false
+	openIDMapMu.Lock()
+	defer openIDMapMu.Unlock()
+	json.Unmarshal(data, &openIDMap)
+	log.Printf("[wx-serve] loaded %d profile mappings", len(openIDMap))
+}
+
+func saveMapping() {
+	openIDMapMu.RLock()
+	data, _ := json.MarshalIndent(openIDMap, "", "  ")
+	openIDMapMu.RUnlock()
+	os.MkdirAll(serveDir(), 0755)
+	os.WriteFile(mappingPath(), data, 0600)
 }
 
 // ── template persistence ──
@@ -77,7 +98,7 @@ func loadTemplates() map[string]string {
 }
 
 func saveTemplates(m map[string]string) {
-	os.MkdirAll(filepath.Dir(templatesPath()), 0755)
+	os.MkdirAll(serveDir(), 0755)
 	data, _ := json.MarshalIndent(m, "", "  ")
 	os.WriteFile(templatesPath(), data, 0600)
 }
@@ -105,6 +126,8 @@ func delTemplate(name string) bool {
 func listTemplates() map[string]string {
 	return loadTemplates()
 }
+
+// ── bot process management ──
 
 func botScript() string {
 	exe, _ := os.Executable()

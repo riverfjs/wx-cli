@@ -218,15 +218,15 @@ prompts/
 
 ```
 ~/.wx-cli/
-  accounts/{profile}.json       登录凭证
-  sync/{profile}                长轮询游标
-  history/{profile}/{uid}.json  对话历史
+  accounts/{alias}.json         登录凭证 (alias = sha256(openid)[:12])
+  sync/{alias}                  长轮询游标
+  history/{alias}/{uid}.json    对话历史
   pids/                         PID 文件
   logs/                         日志文件
   serve/
     wx_token                    微信验证 Token (自动生成)
+    mapping.json                alias → OpenID 映射 (hash → openid)
     templates.json              推送模板注册
-    profiles                    Serve 管理的 profile 列表
 ```
 
 ## 协议备注

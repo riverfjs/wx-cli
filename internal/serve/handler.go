@@ -57,7 +57,7 @@ func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 
 	parts := strings.SplitN(content, " ", 2)
 	cmd := strings.ToLower(parts[0])
-	profile := msg.FromUserName
+	profile := registerOpenID(msg.FromUserName)
 
 	isRoot := cfg.RootOpenID != "" && msg.FromUserName == cfg.RootOpenID
 
@@ -110,11 +110,15 @@ func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 			return
 		}
 		text := strings.TrimSpace(parts[1])
-		profiles := loadServeProfiles()
-		for _, p := range profiles {
-			sendAsync(cfg, p, text)
+		aliases := listManagedAliases()
+		count := 0
+		for _, a := range aliases {
+			if oid, ok := resolveAlias(a); ok {
+				sendAsync(cfg, oid, text)
+				count++
+			}
 		}
-		replyPassive(w, &msg, fmt.Sprintf("已广播给 %d 个用户", len(profiles)))
+		replyPassive(w, &msg, fmt.Sprintf("已广播给 %d 个用户", count))
 	case "模板", "template":
 		if !isRoot {
 			replyPassive(w, &msg, "无权限")
@@ -168,15 +172,16 @@ func handleRelogin(w http.ResponseWriter, r *http.Request, cfg *Config) {
 		return
 	}
 
-	if !isServeProfile(profile) {
-		log.Printf("[wx-serve] relogin ignored, not a serve-managed profile: %s", profile)
-		http.Error(w, "not managed by serve", http.StatusForbidden)
+	openID, ok := resolveAlias(profile)
+	if !ok {
+		log.Printf("[wx-serve] relogin ignored, unknown profile: %s", profile)
+		http.Error(w, "unknown profile", http.StatusForbidden)
 		return
 	}
 
 	log.Printf("[wx-serve] relogin triggered for profile %s", profile)
 
-	sendAsync(cfg, profile, "Bot 会话已过期，正在生成登录链接...")
+	sendAsync(cfg, openID, "Bot 会话已过期，正在生成登录链接...")
 
 	sessionsMu.Lock()
 	if s, ok := sessions[profile]; ok {
@@ -191,20 +196,20 @@ func handleRelogin(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	if err != nil {
 		sessionsMu.Unlock()
 		log.Printf("[wx-serve] relogin QR failed: %s", err)
-		sendAsync(cfg, profile, "重新登录失败: "+err.Error())
+		sendAsync(cfg, openID, "重新登录失败: "+err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	sess := &loginSession{
 		profile:   profile,
-		wxUser:    profile,
+		wxUser:    openID,
 		startTime: time.Now(),
 	}
 	sessions[profile] = sess
 	sessionsMu.Unlock()
 
-	sendAsync(cfg, profile, fmt.Sprintf("请点击链接重新登录:\n\n%s\n\n二维码2分钟内有效", qrURL))
+	sendAsync(cfg, openID, fmt.Sprintf("请点击链接重新登录:\n\n%s\n\n二维码2分钟内有效", qrURL))
 
 	go pollLogin(cfg, sess, qrcode)
 
@@ -235,7 +240,7 @@ func handleService(w http.ResponseWriter, msg *wxMessage) {
 	lines := []string{
 		fmtProc(checkProcess("serve")),
 		fmtProc(checkProcess("ngrok")),
-		fmt.Sprintf("管理 profile 数: %d", len(loadServeProfiles())),
+		fmt.Sprintf("管理 profile 数: %d", len(listManagedAliases())),
 		fmt.Sprintf("注册模板数: %d", len(listTemplates())),
 	}
 	replyPassive(w, msg, strings.Join(lines, "\n"))
@@ -401,9 +406,15 @@ func handlePush(w http.ResponseWriter, r *http.Request, cfg *Config) {
 		return
 	}
 
-	profile, ok := lookupPushToken(token)
+	alias, ok := lookupPushToken(token)
 	if !ok {
 		http.Error(w, "invalid or expired token", http.StatusForbidden)
+		return
+	}
+
+	openID, ok := resolveAlias(alias)
+	if !ok {
+		http.Error(w, "profile mapping not found", http.StatusInternalServerError)
 		return
 	}
 
@@ -432,16 +443,16 @@ func handlePush(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	}
 
 	if templateID != "" {
-		if err := sendTemplate(cfg, profile, templateID, keywords); err != nil {
-			log.Printf("[wx-serve] push failed for %s: %s", shortID(profile), err)
+		if err := sendTemplate(cfg, openID, templateID, keywords); err != nil {
+			log.Printf("[wx-serve] push failed for %s: %s", alias, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	} else {
-		sendAsync(cfg, profile, text)
+		sendAsync(cfg, openID, text)
 	}
 
-	log.Printf("[wx-serve] push to=%s tpl=%s", shortID(profile), tplName)
+	log.Printf("[wx-serve] push to=%s tpl=%s", alias, tplName)
 	fmt.Fprint(w, "ok")
 }
 
@@ -477,7 +488,6 @@ func pollLogin(cfg *Config, sess *loginSession, qrcode string) {
 					continue
 				}
 				path := auth.SaveCredential(cred, sess.profile)
-				saveServeProfile(sess.profile)
 				log.Printf("[wx-serve] login success for profile %s, saved to %s", sess.profile, path)
 				msg := fmt.Sprintf("登录成功!\nBot ID: %s", cred.BotID)
 				if err := startBot(sess.profile); err != nil {

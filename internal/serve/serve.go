@@ -25,6 +25,7 @@ func Run(cfg Config) {
 		log.Printf("[wx-serve] root user: %s", cfg.RootOpenID)
 	}
 
+	loadMapping()
 	go cleanupRecentMsgs()
 	go cleanupExpiredTokens()
 
