@@ -17,6 +17,17 @@ usage() {
   exit 1
 }
 
+# kill a process and all its descendants (cross-platform)
+kill_tree() {
+  local pid=$1
+  local children
+  children=$(pgrep -P "$pid" 2>/dev/null) || true
+  for child in $children; do
+    kill_tree "$child"
+  done
+  kill "$pid" 2>/dev/null || true
+}
+
 [[ $# -lt 2 ]] && usage
 
 ACTION="$1"
@@ -44,8 +55,7 @@ case "$ACTION" in
       echo "[$PROFILE] push token 注册失败 (serve 未运行?)"
     fi
 
-    # setsid creates a new process group; PID == PGID
-    WX_PROFILE="$PROFILE" PUSH_KEY="$PUSH_KEY" setsid bash -c "
+    BOT_CMD="
       export WX_PROFILE=\"$PROFILE\"
       export PUSH_KEY=\"$PUSH_KEY\"
       bash \"$SHELL_DIR/wx-bot.sh\" \"$PROFILE\"
@@ -54,7 +64,13 @@ case "$ACTION" in
         curl -sf -X POST http://localhost:8080/relogin -d \"profile=$PROFILE\" || true
       fi
       rm -f \"$PID_FILE\"
-    " >> "$LOG_FILE" 2>&1 &
+    "
+
+    if command -v setsid >/dev/null 2>&1; then
+      setsid bash -c "$BOT_CMD" >> "$LOG_FILE" 2>&1 &
+    else
+      nohup bash -c "$BOT_CMD" >> "$LOG_FILE" 2>&1 &
+    fi
     echo $! > "$PID_FILE"
     echo "[$PROFILE] 已启动 (PID $!) — 日志: $LOG_FILE"
     ;;
@@ -63,8 +79,12 @@ case "$ACTION" in
       echo "[$PROFILE] 未运行"
       exit 0
     fi
-    PGID=$(cat "$PID_FILE")
-    kill -- -"$PGID" 2>/dev/null || true
+    PID=$(cat "$PID_FILE")
+    if command -v setsid >/dev/null 2>&1; then
+      kill -- -"$PID" 2>/dev/null || true
+    else
+      kill_tree "$PID"
+    fi
     rm -f "$PID_FILE"
     echo "[$PROFILE] 已停止"
     ;;
