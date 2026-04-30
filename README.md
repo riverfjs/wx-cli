@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="claude-jumping.svg" alt="Built with Claude Code" width="140">
+</p>
+
 # wx-cli
 
 WeChat personal account bot CLI, built on Tencent's official [iLink Bot API](https://github.com/Tencent/openclaw-weixin).
