@@ -3,7 +3,10 @@ set -eo pipefail
 
 WX_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SHELL_DIR="$WX_DIR/shell"
-LOG_DIR="$WX_DIR"
+STATE_DIR="$HOME/.wx-cli"
+LOG_DIR="$STATE_DIR/logs"
+PID_DIR="$STATE_DIR"
+mkdir -p "$LOG_DIR"
 
 usage() {
   echo "用法: bash bot.sh {start|stop|status|log} <profile>"
@@ -19,7 +22,7 @@ usage() {
 ACTION="$1"
 PROFILE="$2"
 LOG_FILE="$LOG_DIR/$PROFILE.log"
-PID_FILE="$LOG_DIR/$PROFILE.pid"
+PID_FILE="$PID_DIR/$PROFILE.pid"
 
 case "$ACTION" in
   start)
@@ -27,7 +30,15 @@ case "$ACTION" in
       echo "[$PROFILE] 已在运行 (PID $(cat "$PID_FILE"))"
       exit 0
     fi
-    nohup bash "$SHELL_DIR/wx-bot.sh" "$PROFILE" >> "$LOG_FILE" 2>&1 &
+    nohup bash -c "
+      bash \"$SHELL_DIR/wx-bot.sh\" \"$PROFILE\"
+      # bot exited, check if session expired
+      if tail -5 \"$LOG_FILE\" | grep -q 'session expired'; then
+        echo \"[\$(date +%H:%M:%S)] session expired, notifying serve...\"
+        curl -sf -X POST http://localhost:8080/relogin -d \"profile=$PROFILE\" || true
+      fi
+      rm -f \"$PID_FILE\"
+    " >> "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     echo "[$PROFILE] 已启动 (PID $!) — 日志: $LOG_FILE"
     ;;

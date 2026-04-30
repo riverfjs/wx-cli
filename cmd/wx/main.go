@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"wx-cli/internal/api"
 	"wx-cli/internal/auth"
 	"wx-cli/internal/cli"
 	"wx-cli/internal/msg"
+	"wx-cli/internal/serve"
 )
 
 const (
@@ -70,6 +72,38 @@ func parseSendArgs(args []string) (to, ctx, text, image, file, video string) {
 		case "--video":
 			if i+1 < len(args) {
 				video = args[i+1]; i++
+			}
+		}
+	}
+	return
+}
+
+func envDefault(val, envKey string) string {
+	if val != "" {
+		return val
+	}
+	return os.Getenv(envKey)
+}
+
+func parseServeArgs(args []string) (port int, wxToken, wxAppID, wxSecret string) {
+	port = 8080
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--port":
+			if i+1 < len(args) {
+				port, _ = strconv.Atoi(args[i+1]); i++
+			}
+		case "--wx-token":
+			if i+1 < len(args) {
+				wxToken = args[i+1]; i++
+			}
+		case "--wx-appid":
+			if i+1 < len(args) {
+				wxAppID = args[i+1]; i++
+			}
+		case "--wx-secret":
+			if i+1 < len(args) {
+				wxSecret = args[i+1]; i++
 			}
 		}
 	}
@@ -159,6 +193,22 @@ func main() {
 		}
 		fmt.Print(tok)
 
+	case "serve":
+		port, wxToken, wxAppID, wxSecret := parseServeArgs(args[1:])
+		wxToken = envDefault(wxToken, "WX_TOKEN")
+		wxAppID = envDefault(wxAppID, "WX_APPID")
+		wxSecret = envDefault(wxSecret, "WX_SECRET")
+		if wxToken == "" {
+			fmt.Fprintln(os.Stderr, "WeChat token required. Use --wx-token or WX_TOKEN env var")
+			os.Exit(1)
+		}
+		serve.Run(serve.Config{
+			Port:     port,
+			WxToken:  wxToken,
+			WxAppID:  wxAppID,
+			WxSecret: wxSecret,
+		})
+
 	case "help", "--help", "-h":
 		fmt.Printf(`%swx-cli%s — WeChat iLink Bot CLI
 
@@ -169,6 +219,7 @@ func main() {
   wx --profile NAME send --to ID --ctx TOKEN --text MSG
   wx --profile NAME token <user_id>             Print saved context token
   wx --profile NAME                             Interactive REPL
+  wx serve --wx-token TOKEN [--port 8080]       WeChat webhook server
 `, cB, cW, cB, cW)
 
 	default:
