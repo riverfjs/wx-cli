@@ -24,8 +24,10 @@ echo "-------------------------------"
 # ── rate limit check ──
 check_overload() {
   python3 - <<'PYEOF'
-import json, time, sys
+import json, time, sys, os
 CACHE = "/tmp/claude_rate_limits.json"
+if not os.path.exists(CACHE):
+    sys.exit(0)
 try:
     with open(CACHE) as f:
         rl = json.load(f)
@@ -37,6 +39,27 @@ if pct >= 85:
     secs = max(0, int(fh.get("resets_at", 0)) - int(time.time()))
     h, m = divmod(secs // 60, 60)
     print(f"Claude usage at {round(pct)}%, resets in {h}h {m}m")
+PYEOF
+}
+
+check_usage() {
+  python3 - <<'PYEOF'
+import json, time, sys, os
+CACHE = "/tmp/claude_rate_limits.json"
+if not os.path.exists(CACHE):
+    print("仅订阅模式支持用量查询")
+    sys.exit(0)
+try:
+    with open(CACHE) as f:
+        rl = json.load(f)
+except Exception:
+    print("用量数据读取失败")
+    sys.exit(0)
+fh = rl.get("five_hour", {})
+pct = fh.get("used_percentage", 0)
+secs = max(0, int(fh.get("resets_at", 0)) - int(time.time()))
+h, m = divmod(secs // 60, 60)
+print(f"Claude 用量: {round(pct)}%, {h}h {m}m 后重置")
 PYEOF
 }
 
@@ -88,8 +111,8 @@ Or just send a message to chat." &
     continue
   fi
   if [[ "$text" == "/usage" ]]; then
-    usage=$(check_overload)
-    $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" --text "${usage:-Claude usage: OK}" &
+    usage=$(check_usage)
+    $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" --text "$usage" &
     continue
   fi
 
