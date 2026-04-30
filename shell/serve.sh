@@ -105,6 +105,18 @@ case "$ACTION" in
     echo $! > "$SERVE_PID"
     echo "[serve] 已启动 (PID $!, port $PORT) — 日志: $SERVE_LOG"
 
+    # wait for serve to be ready
+    sleep 1
+
+    # auto-start bots from mapping
+    MAPPING="$SERVE_DIR/mapping.json"
+    if [[ -f "$MAPPING" ]]; then
+      BOT_SH="$WX_DIR/shell/bot.sh"
+      for alias in $(python3 -c "import json; print(' '.join(json.load(open('$MAPPING')).keys()))" 2>/dev/null); do
+        bash "$BOT_SH" start "$alias" 2>&1
+      done
+    fi
+
     if [[ -n "$NO_NGROK" ]]; then
       echo "[ngrok] 已跳过 (--no-ngrok)"
       echo "公网地址请自行配置，测试号 URL 填: http://你的IP:$PORT"
@@ -137,11 +149,19 @@ case "$ACTION" in
     ;;
 
   stop)
+    # stop all bots first
+    BOT_SH="$WX_DIR/shell/bot.sh"
+    for f in "$PID_DIR"/*.pid; do
+      [[ ! -f "$f" ]] && continue
+      name=$(basename "$f" .pid)
+      [[ "$name" == "serve" || "$name" == "ngrok" ]] && continue
+      bash "$BOT_SH" stop "$name" 2>&1
+    done
+    # stop serve + ngrok
     for name in serve ngrok; do
       pid_file="$PID_DIR/${name}.pid"
       if [[ -f "$pid_file" ]]; then
         pid=$(cat "$pid_file")
-        pkill -P "$pid" 2>/dev/null || true
         kill "$pid" 2>/dev/null || true
         rm -f "$pid_file"
       fi
