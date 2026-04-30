@@ -66,11 +66,6 @@ func Monitor(cred *api.Credential, profile string) {
 				continue // skip bot's own messages
 			}
 
-			// Persist context token for this user
-			if msg.ContextToken != "" && msg.FromUserID != "" {
-				auth.SaveContextToken(profile, msg.FromUserID, msg.ContextToken)
-			}
-
 			for _, item := range msg.ItemList {
 				ev := MessageEvent{
 					FromUserID:   msg.FromUserID,
@@ -160,10 +155,6 @@ func Start(cred *api.Credential, profile string, handler Handler, done <-chan st
 			auth.SaveSyncBuf(profile, syncBuf)
 		}
 		for _, m := range resp.Msgs {
-			// Persist context token for this user
-			if m.ContextToken != "" && m.FromUserID != "" {
-				auth.SaveContextToken(profile, m.FromUserID, m.ContextToken)
-			}
 			handler(m)
 		}
 	}

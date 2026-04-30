@@ -156,17 +156,16 @@ Bot 检测到会话过期 (code -14) → 通知 serve → 推送新登录链接 
 
 ### 消息推送
 
-通过 `wx-push` skill 推送模板消息或纯文本。身份由 `WX_PROFILE` 环境变量决定，bot 进程自动继承。
+通过 `wx-push` skill 推送模板消息或纯文本。每个进程持有 server 签发的 session token（PUSH_KEY），绑定单一 profile，无法推给其他用户。
 
 ```bash
-# bot 进程内 (WX_PROFILE 自动继承)
+# bot 进程内 (PUSH_KEY 环境变量自动继承，推给自己)
 bash ~/.claude/skills/wx-push/scripts/push.sh --template signal --k1 "AAPL" --k2 "买入" --k3 "策略B" --k4 "14:30"
 
-# crontab (手动设 WX_PROFILE)
+# crontab (WX_PROFILE 指定身份，push.sh 自动注册临时 token)
 WX_PROFILE=oiNG73xxx python3 scan.py AAPL.US --notify push
 
-# root 广播
-bash ~/.claude/skills/wx-push/scripts/push.sh --all --text "系统维护通知"
+# root 广播: 通过微信发送 "广播 系统维护通知"
 ```
 
 ### 管理脚本
@@ -207,7 +206,7 @@ shell/
   handlers/reply.sh    消息处理器
 wx-push/               推送 skill (安装到 ~/.claude/skills/wx-push)
   SKILL.md             Skill 定义
-  scripts/push.sh      推送封装 (WX_PROFILE + wx_token 鉴权)
+  scripts/push.sh      推送封装 (PUSH_KEY session token 鉴权)
 tools/
   hud_wrapper.sh       claude-hud 状态栏 + rate_limits 缓存
   setup-hud.sh         一键配置 statusLine
@@ -221,7 +220,6 @@ prompts/
 ~/.wx-cli/
   accounts/{profile}.json       登录凭证
   sync/{profile}                长轮询游标
-  tokens/{profile}/{uid}        Context token
   history/{profile}/{uid}.json  对话历史
   pids/                         PID 文件
   logs/                         日志文件

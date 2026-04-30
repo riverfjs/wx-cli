@@ -11,29 +11,28 @@ Send push notifications to WeChat users via the wx-cli serve webhook server (`lo
 
 ## Hard Constraints
 
-- Always ensure wx serve is running before pushing. Start with `bash ~/.claude/skills/wx-cli/shell/serve.sh start` if needed.
+- Always ensure wx serve is running before pushing.
 - Always use `bash ~/.claude/skills/wx-push/scripts/push.sh` to send messages. Never call the HTTP endpoint directly.
-- Always set `WX_PROFILE` env var to identify the push target. push.sh reads it automatically.
-- Never use `--profile` flag when `WX_PROFILE` is set — push.sh ignores it to prevent misrouting.
+- Always set `WX_PROFILE` env var or ensure `PUSH_KEY` is inherited from bot.sh.
 - Always register templates via WeChat 公众号 root command (`模板 add <name> <id>`) before using `--template`.
 - Always check the JSON output for `"ok":true` to confirm delivery.
+- Never attempt to push to other users. Each PUSH_KEY is scoped to one profile by the server.
 
 ## Identity Model
 
-| Context | WX_PROFILE source | Who receives push |
+| Context | Auth | How it works |
 |---|---|---|
-| Bot process | bot.sh exports it | The bot's own user |
-| Crontab | Command prefix `WX_PROFILE=xxx` | The specified user |
-| Root manual | Not set, use `--profile` or `--all` | Any user or all users |
+| Bot process | `PUSH_KEY` env (inherited from bot.sh) | Server maps token → profile in memory |
+| Crontab | `WX_PROFILE` env | push.sh auto-registers temp token (10min TTL) |
+| Root broadcast | WeChat command "广播 xxx" | Only via 公众号, not /push API |
 
-push.sh enforces: if `WX_PROFILE` is set, `--profile` is ignored. This prevents bots from accidentally pushing to the wrong user.
+push.sh has no `--profile` or `--all` flag. Target is always determined server-side.
 
 ## Workflow
 
-### Template push (from bot or crontab)
+### Template push
 
 ```bash
-# WX_PROFILE is inherited from bot.sh or set in crontab
 bash ~/.claude/skills/wx-push/scripts/push.sh \
   --template signal \
   --k1 "AAPL.US" \
@@ -48,20 +47,6 @@ bash ~/.claude/skills/wx-push/scripts/push.sh \
 bash ~/.claude/skills/wx-push/scripts/push.sh --text "服务器告警: disk usage 95%"
 ```
 
-### Root: push to specific user or broadcast
-
-```bash
-# push to one user (only works when WX_PROFILE is NOT set)
-bash ~/.claude/skills/wx-push/scripts/push.sh --profile oiNG73xxx --text "notice"
-
-# broadcast to all serve-managed profiles
-bash ~/.claude/skills/wx-push/scripts/push.sh --all --text "系统维护通知"
-```
-
-## Auth
-
-push.sh reads `~/.wx-cli/serve/wx_token` and sends it with every request. The serve `/push` endpoint validates this token.
-
 ## Registered Templates
 
 | Name | Fields | Description |
@@ -72,11 +57,12 @@ push.sh reads `~/.wx-cli/serve/wx_token` and sends it with every request. The se
 
 ```json
 {"ok":true}
-{"ok":false,"error":"invalid token"}
+{"ok":false,"error":"invalid or expired token"}
 ```
 
 ## When NOT to use this skill
 
 - User wants to send messages as the WeChat bot (use wx-cli send instead).
 - User wants interactive WeChat conversations (use wx-cli interactive mode).
+- User wants to broadcast to all users (use WeChat root command "广播").
 - wx serve is not running and user has no intent to start it.

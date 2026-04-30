@@ -30,8 +30,23 @@ case "$ACTION" in
       echo "[$PROFILE] 已在运行 (PID $(cat "$PID_FILE"))"
       exit 0
     fi
-    WX_PROFILE="$PROFILE" nohup bash -c "
+    # register with serve to get a scoped push token
+    WX_TOKEN_FILE="$HOME/.wx-cli/serve/wx_token"
+    PUSH_KEY=""
+    if [[ -f "$WX_TOKEN_FILE" ]]; then
+      PUSH_KEY=$(curl -sf -X POST http://localhost:8080/register \
+        -d "profile=$PROFILE" \
+        -d "secret=$(cat "$WX_TOKEN_FILE")" 2>/dev/null) || true
+    fi
+    if [[ -n "$PUSH_KEY" ]]; then
+      echo "[$PROFILE] push token 已注册"
+    else
+      echo "[$PROFILE] push token 注册失败 (serve 未运行?)"
+    fi
+
+    WX_PROFILE="$PROFILE" PUSH_KEY="$PUSH_KEY" nohup bash -c "
       export WX_PROFILE=\"$PROFILE\"
+      export PUSH_KEY=\"$PUSH_KEY\"
       bash \"$SHELL_DIR/wx-bot.sh\" \"$PROFILE\"
       # bot exited, check if session expired
       if tail -5 \"$LOG_FILE\" | grep -q 'session expired'; then

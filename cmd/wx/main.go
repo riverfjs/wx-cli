@@ -185,18 +185,6 @@ func main() {
 			os.Exit(1)
 		}
 
-	case "token":
-		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: wx token <user_id>")
-			os.Exit(1)
-		}
-		tok := auth.LoadContextToken(profile, args[1])
-		if tok == "" {
-			fmt.Fprintln(os.Stderr, "No context token found.")
-			os.Exit(1)
-		}
-		fmt.Print(tok)
-
 	case "serve":
 		port, wxToken, wxAppID, wxSecret, wxRoot := parseServeArgs(args[1:])
 		wxToken = envDefault(wxToken, "WX_TOKEN")
@@ -223,7 +211,6 @@ func main() {
   wx accounts                                   List saved profiles
   wx --profile NAME monitor                     Daemon: JSON lines per message
   wx --profile NAME send --to ID --ctx TOKEN --text MSG
-  wx --profile NAME token <user_id>             Print saved context token
   wx --profile NAME                             Interactive REPL
   wx serve --wx-token TOKEN [--port 8080]       WeChat webhook server
 `, cB, cW, cB, cW)

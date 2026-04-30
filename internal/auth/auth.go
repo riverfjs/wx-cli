@@ -91,25 +91,6 @@ func SaveSyncBuf(profile string, buf string) {
 	os.WriteFile(path, []byte(buf), 0644)
 }
 
-// ── Context token persistence ──
-
-func tokensDir(profile string) string {
-	return filepath.Join(stateDir(), "tokens", profile)
-}
-
-func SaveContextToken(profile, userID, token string) {
-	dir := tokensDir(profile)
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, userID), []byte(token), 0600)
-}
-
-func LoadContextToken(profile, userID string) string {
-	data, err := os.ReadFile(filepath.Join(tokensDir(profile), userID))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
-}
 
 func Login(profile string) (*api.Credential, error) {
 	fmt.Println("Requesting QR code...")

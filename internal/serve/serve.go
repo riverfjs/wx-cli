@@ -26,6 +26,15 @@ func Run(cfg Config) {
 	}
 
 	go cleanupRecentMsgs()
+	go cleanupExpiredTokens()
+
+	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		handleRegister(w, r, &cfg)
+	})
 
 	http.HandleFunc("/push", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

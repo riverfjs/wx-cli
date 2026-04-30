@@ -27,7 +27,7 @@ var (
 
 const helpText = "可用命令:\n登录 — 触发 iLink 登录\n状态 — 查看登录状态\n帮助 — 显示本帮助"
 
-const rootHelpText = "管理命令 (root):\n服务 — 服务状态\n活跃 — 活跃 Bot 列表\n历史 — 最新聊天记录\n重启 — 重启所有 Bot\n关闭 — 停止所有 Bot\n模板 add/list/del — 模板管理"
+const rootHelpText = "管理命令 (root):\n服务 — 服务状态\n活跃 — 活跃 Bot 列表\n历史 — 最新聊天记录\n重启 — 重启所有 Bot\n关闭 — 停止所有 Bot\n广播 <消息> — 推送给所有用户\n模板 add/list/del — 模板管理"
 
 func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	body, err := io.ReadAll(r.Body)
@@ -100,6 +100,21 @@ func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 			return
 		}
 		handleStopBots(w, &msg)
+	case "广播", "broadcast":
+		if !isRoot {
+			replyPassive(w, &msg, "无权限")
+			return
+		}
+		if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+			replyPassive(w, &msg, "用法: 广播 <消息内容>")
+			return
+		}
+		text := strings.TrimSpace(parts[1])
+		profiles := loadServeProfiles()
+		for _, p := range profiles {
+			sendAsync(cfg, p, text)
+		}
+		replyPassive(w, &msg, fmt.Sprintf("已广播给 %d 个用户", len(profiles)))
 	case "模板", "template":
 		if !isRoot {
 			replyPassive(w, &msg, "无权限")
@@ -345,11 +360,39 @@ func handleTemplate(w http.ResponseWriter, msg *wxMessage, content string) {
 	}
 }
 
+func handleRegister(w http.ResponseWriter, r *http.Request, cfg *Config) {
+	profile := r.FormValue("profile")
+	secret := r.FormValue("secret")
+	ttlParam := r.FormValue("ttl")
+
+	if profile == "" || secret == "" {
+		http.Error(w, "missing profile or secret", http.StatusBadRequest)
+		return
+	}
+	if secret != cfg.WxToken {
+		http.Error(w, "invalid secret", http.StatusForbidden)
+		return
+	}
+
+	var ttl time.Duration
+	if ttlParam != "" {
+		if d, err := time.ParseDuration(ttlParam); err == nil {
+			ttl = d
+		}
+	}
+
+	token := registerPushToken(profile, ttl)
+	label := "permanent"
+	if ttl > 0 {
+		label = ttl.String()
+	}
+	log.Printf("[wx-serve] registered push token for %s (ttl=%s)", shortID(profile), label)
+	fmt.Fprint(w, token)
+}
+
 func handlePush(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	r.ParseForm()
 	token := r.FormValue("token")
-	profile := r.FormValue("profile")
-	broadcastAll := r.FormValue("all") == "1"
 	text := r.FormValue("text")
 	tplName := r.FormValue("template")
 
@@ -358,33 +401,12 @@ func handlePush(w http.ResponseWriter, r *http.Request, cfg *Config) {
 		return
 	}
 
-	isRoot := token == cfg.WxToken
-
-	if !isRoot {
-		http.Error(w, "invalid token", http.StatusForbidden)
+	profile, ok := lookupPushToken(token)
+	if !ok {
+		http.Error(w, "invalid or expired token", http.StatusForbidden)
 		return
 	}
 
-	// determine target profiles
-	var targets []string
-	if broadcastAll {
-		targets = loadServeProfiles()
-		if len(targets) == 0 {
-			http.Error(w, "no serve profiles", http.StatusBadRequest)
-			return
-		}
-	} else if profile != "" {
-		if !isServeProfile(profile) && profile != cfg.RootOpenID {
-			http.Error(w, "not managed by serve", http.StatusForbidden)
-			return
-		}
-		targets = []string{profile}
-	} else {
-		http.Error(w, "missing profile or --all", http.StatusBadRequest)
-		return
-	}
-
-	// collect message content
 	var keywords []string
 	var templateID string
 	if tplName != "" {
@@ -409,24 +431,17 @@ func handlePush(w http.ResponseWriter, r *http.Request, cfg *Config) {
 		return
 	}
 
-	// send to all targets
-	for _, t := range targets {
-		if templateID != "" {
-			if err := sendTemplate(cfg, t, templateID, keywords); err != nil {
-				log.Printf("[wx-serve] push template failed for %s: %s", truncate(t, 12), err)
-			}
-		} else {
-			sendAsync(cfg, t, text)
+	if templateID != "" {
+		if err := sendTemplate(cfg, profile, templateID, keywords); err != nil {
+			log.Printf("[wx-serve] push failed for %s: %s", shortID(profile), err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+	} else {
+		sendAsync(cfg, profile, text)
 	}
 
-	label := profile
-	if broadcastAll {
-		label = fmt.Sprintf("all(%d)", len(targets))
-	} else if len(label) > 12 {
-		label = label[:12] + "..."
-	}
-	log.Printf("[wx-serve] push to=%s tpl=%s", label, tplName)
+	log.Printf("[wx-serve] push to=%s tpl=%s", shortID(profile), tplName)
 	fmt.Fprint(w, "ok")
 }
 
