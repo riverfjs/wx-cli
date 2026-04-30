@@ -44,11 +44,11 @@ case "$ACTION" in
       echo "[$PROFILE] push token 注册失败 (serve 未运行?)"
     fi
 
-    WX_PROFILE="$PROFILE" PUSH_KEY="$PUSH_KEY" nohup bash -c "
+    # setsid creates a new process group; PID == PGID
+    WX_PROFILE="$PROFILE" PUSH_KEY="$PUSH_KEY" setsid bash -c "
       export WX_PROFILE=\"$PROFILE\"
       export PUSH_KEY=\"$PUSH_KEY\"
       bash \"$SHELL_DIR/wx-bot.sh\" \"$PROFILE\"
-      # bot exited, check if session expired
       if tail -5 \"$LOG_FILE\" | grep -q 'session expired'; then
         echo \"[\$(date +%H:%M:%S)] session expired, notifying serve...\"
         curl -sf -X POST http://localhost:8080/relogin -d \"profile=$PROFILE\" || true
@@ -60,17 +60,11 @@ case "$ACTION" in
     ;;
   stop)
     if [[ ! -f "$PID_FILE" ]]; then
-      echo "[$PROFILE] 未找到 PID 文件，尝试按进程名查杀..."
-      pkill -f "wx-bot.sh $PROFILE" 2>/dev/null || true
-      pkill -f "wx.*monitor.*$PROFILE" 2>/dev/null || true
-      echo "[$PROFILE] 已停止"
+      echo "[$PROFILE] 未运行"
       exit 0
     fi
-    PID=$(cat "$PID_FILE")
-    pkill -P "$PID" 2>/dev/null || true
-    kill "$PID" 2>/dev/null || true
-    pkill -f "wx-bot.sh $PROFILE" 2>/dev/null || true
-    pkill -f "wx.*monitor.*$PROFILE" 2>/dev/null || true
+    PGID=$(cat "$PID_FILE")
+    kill -- -"$PGID" 2>/dev/null || true
     rm -f "$PID_FILE"
     echo "[$PROFILE] 已停止"
     ;;
@@ -78,9 +72,6 @@ case "$ACTION" in
     if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
       PID=$(cat "$PID_FILE")
       echo "[$PROFILE] 运行中 (PID $PID)"
-      # 显示子进程
-      children=$(pgrep -P "$PID" 2>/dev/null | tr '\n' ' ')
-      [[ -n "$children" ]] && echo "  子进程: $children"
     else
       rm -f "$PID_FILE" 2>/dev/null
       echo "[$PROFILE] 未运行"
