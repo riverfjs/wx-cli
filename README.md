@@ -118,8 +118,11 @@ bash shell/bot.sh log work                 # 日志
 ### 启动
 
 ```bash
-# 首次启动自动安装 ngrok 并生成 WX_TOKEN
+# 通过 ngrok (无公网 IP)
 WX_APPID=你的appid WX_SECRET=你的secret WX_ROOT=你的openid bash shell/serve.sh start
+
+# 有公网 IP 或域名 (跳过 ngrok)
+WX_APPID=你的appid WX_SECRET=你的secret WX_ROOT=你的openid bash shell/serve.sh start --no-ngrok
 ```
 
 ### 配置测试号
@@ -129,7 +132,7 @@ WX_APPID=你的appid WX_SECRET=你的secret WX_ROOT=你的openid bash shell/serv
 - **URL**: `bash shell/serve.sh url` 输出的地址
 - **Token**: `cat ~/.wx-cli/serve/wx_token`
 
-> ngrok 免费版每次重启 URL 会变，需重新配置。Token 不变。
+> ngrok 免费版每次重启 URL 会变，需重新配置。Token 不变。有公网 IP 的可用 `--no-ngrok` 跳过，直接填 `http://IP:端口`。
 
 ### 微信命令
 

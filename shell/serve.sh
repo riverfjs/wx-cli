@@ -64,10 +64,13 @@ install_ngrok() {
   echo "ngrok 已安装: $NGROK"
 }
 
+NO_NGROK=""
 parse_args() {
-  for arg in "$@"; do
-    case "$arg" in
-      --port) shift; PORT="$1"; shift ;;
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --port) PORT="$2"; shift 2 ;;
+      --no-ngrok) NO_NGROK=1; shift ;;
+      *) shift ;;
     esac
   done
 }
@@ -102,30 +105,35 @@ case "$ACTION" in
     echo $! > "$SERVE_PID"
     echo "[serve] 已启动 (PID $!, port $PORT) — 日志: $SERVE_LOG"
 
-    # install & check ngrok authtoken
-    install_ngrok
-    if ! grep -q 'authtoken' "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null && ! grep -q 'authtoken' "$HOME/.ngrok2/ngrok.yml" 2>/dev/null; then
-      echo ""
-      echo "[ngrok] 未配置 authtoken，请先执行:"
-      echo "  1. 注册: https://dashboard.ngrok.com/signup"
-      echo "  2. 配置: $NGROK config add-authtoken <你的TOKEN>"
-      echo "  3. 重新启动: bash shell/serve.sh start"
-      echo ""
-      echo "[serve] 已启动，但 ngrok 未启动（无公网地址）"
-      exit 0
-    fi
+    if [[ -n "$NO_NGROK" ]]; then
+      echo "[ngrok] 已跳过 (--no-ngrok)"
+      echo "公网地址请自行配置，测试号 URL 填: http://你的IP:$PORT"
+    else
+      # install & check ngrok authtoken
+      install_ngrok
+      if ! grep -q 'authtoken' "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null && ! grep -q 'authtoken' "$HOME/.ngrok2/ngrok.yml" 2>/dev/null; then
+        echo ""
+        echo "[ngrok] 未配置 authtoken，请先执行:"
+        echo "  1. 注册: https://dashboard.ngrok.com/signup"
+        echo "  2. 配置: $NGROK config add-authtoken <你的TOKEN>"
+        echo "  3. 重新启动: bash shell/serve.sh start"
+        echo ""
+        echo "[serve] 已启动，但 ngrok 未启动（无公网地址）"
+        exit 0
+      fi
 
-    nohup "$NGROK" http "$PORT" --log=stdout --log-format=logfmt > "$NGROK_LOG" 2>&1 &
-    echo $! > "$NGROK_PID"
-    echo "[ngrok] 已启动 (PID $!)"
+      nohup "$NGROK" http "$PORT" --log=stdout --log-format=logfmt > "$NGROK_LOG" 2>&1 &
+      echo $! > "$NGROK_PID"
+      echo "[ngrok] 已启动 (PID $!)"
 
-    # wait for tunnel, check if ngrok actually connected
-    sleep 3
-    if ! kill -0 "$(cat "$NGROK_PID")" 2>/dev/null; then
-      echo "[ngrok] 启动失败，查看日志: bash shell/serve.sh log"
-      exit 1
+      # wait for tunnel, check if ngrok actually connected
+      sleep 3
+      if ! kill -0 "$(cat "$NGROK_PID")" 2>/dev/null; then
+        echo "[ngrok] 启动失败，查看日志: bash shell/serve.sh log"
+        exit 1
+      fi
+      bash "$0" url
     fi
-    bash "$0" url
     ;;
 
   stop)
