@@ -52,14 +52,32 @@ install_ngrok() {
   fi
   echo "安装 ngrok 到 $NGROK ..."
   mkdir -p "$(dirname "$NGROK")"
-  local arch
+
+  local os arch ext
+  case "$(uname -s)" in
+    Darwin) os="darwin" ; ext="zip" ;;
+    Linux)  os="linux"  ; ext="tgz" ;;
+    *)
+      echo "错误: 不支持的操作系统 $(uname -s)"
+      return 1
+      ;;
+  esac
+
   arch=$(uname -m)
   case "$arch" in
     x86_64)  arch="amd64" ;;
-    aarch64) arch="arm64" ;;
+    arm64|aarch64) arch="arm64" ;;
   esac
-  local url="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${arch}.tgz"
-  curl -sL "$url" | tar xz -C "$(dirname "$NGROK")"
+
+  local url="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-${os}-${arch}.${ext}"
+
+  if [[ "$ext" == "zip" ]]; then
+    curl -sL "$url" -o /tmp/ngrok.zip
+    unzip -o /tmp/ngrok.zip ngrok -d "$(dirname "$NGROK")"
+    rm -f /tmp/ngrok.zip
+  else
+    curl -sL "$url" | tar xz -C "$(dirname "$NGROK")"
+  fi
   chmod +x "$NGROK"
   echo "ngrok 已安装: $NGROK"
 }
@@ -123,7 +141,7 @@ case "$ACTION" in
     else
       # install & check ngrok authtoken
       install_ngrok
-      if ! grep -q 'authtoken' "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null && ! grep -q 'authtoken' "$HOME/.ngrok2/ngrok.yml" 2>/dev/null; then
+      if ! grep -q 'authtoken' "$HOME/.config/ngrok/ngrok.yml" 2>/dev/null && ! grep -q 'authtoken' "$HOME/.ngrok2/ngrok.yml" 2>/dev/null && ! grep -q 'authtoken' "$HOME/Library/Application Support/ngrok/ngrok.yml" 2>/dev/null; then
         echo ""
         echo "[ngrok] 未配置 authtoken，请先执行:"
         echo "  1. 注册: https://dashboard.ngrok.com/signup"
