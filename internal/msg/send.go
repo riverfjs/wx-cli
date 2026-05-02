@@ -65,23 +65,6 @@ func File(cred *api.Credential, to, ctx, filePath string) error {
 	}))
 }
 
-func Voice(cred *api.Credential, to, ctx, filePath string, durationMs int) error {
-	up, err := cdn.Upload(cred, filePath, to)
-	if err != nil {
-		return err
-	}
-	return api.SendMessage(cred, buildMsg(to, ctx, &api.MessageItem{
-		Type: 3,
-		VoiceItem: &api.VoiceItem{
-			Media:         cdn.BuildCDNMedia(up),
-			EncodeType:    6,
-			BitsPerSample: 16,
-			SampleRate:    24000,
-			Playtime:      durationMs,
-		},
-	}))
-}
-
 func Video(cred *api.Credential, to, ctx, filePath string) error {
 	up, err := cdn.Upload(cred, filePath, to)
 	if err != nil {

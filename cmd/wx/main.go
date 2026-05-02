@@ -46,7 +46,7 @@ func requireCred(profile string) *api.Credential {
 	return cred
 }
 
-func parseSendArgs(args []string) (to, ctx, text, image, file, video, voice string, voiceDuration int) {
+func parseSendArgs(args []string) (to, ctx, text, image, file, video string) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--to":
@@ -72,14 +72,6 @@ func parseSendArgs(args []string) (to, ctx, text, image, file, video, voice stri
 		case "--video":
 			if i+1 < len(args) {
 				video = args[i+1]; i++
-			}
-		case "--voice":
-			if i+1 < len(args) {
-				voice = args[i+1]; i++
-			}
-		case "--duration":
-			if i+1 < len(args) {
-				voiceDuration, _ = strconv.Atoi(args[i+1]); i++
 			}
 		}
 	}
@@ -184,12 +176,12 @@ func main() {
 
 	case "send":
 		cred := requireCred(profile)
-		to, ctx, text, image, file, video, voice, voiceDuration := parseSendArgs(args[1:])
+		to, ctx, text, image, file, video := parseSendArgs(args[1:])
 
 		if to == "" || ctx == "" {
 			fmt.Fprintln(os.Stderr, "Usage: wx send --to USER_ID --ctx CONTEXT_TOKEN --text MSG")
 			fmt.Fprintln(os.Stderr, "       wx send --to USER_ID --ctx CONTEXT_TOKEN --image PATH")
-			fmt.Fprintln(os.Stderr, "       wx send --to USER_ID --ctx CONTEXT_TOKEN --voice PATH --duration MS")
+			fmt.Fprintln(os.Stderr, "       wx send --to USER_ID --ctx CONTEXT_TOKEN --file PATH")
 			os.Exit(1)
 		}
 
@@ -201,12 +193,10 @@ func main() {
 			err = msg.Image(cred, to, ctx, image)
 		case file != "":
 			err = msg.File(cred, to, ctx, file)
-		case voice != "":
-			err = msg.Voice(cred, to, ctx, voice, voiceDuration)
 		case video != "":
 			err = msg.Video(cred, to, ctx, video)
 		default:
-			fmt.Fprintln(os.Stderr, "Specify --text, --image, --file, --video, or --voice")
+			fmt.Fprintln(os.Stderr, "Specify --text, --image, --file, or --video")
 			os.Exit(1)
 		}
 
