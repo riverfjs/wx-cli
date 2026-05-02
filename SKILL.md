@@ -1,6 +1,6 @@
 ---
 name: wx-cli
-description: Send and receive WeChat messages, images, files via the iLink Bot API CLI. Use when user wants to send a WeChat message, image, file, or start the WeChat bot listener.
+description: Send and receive WeChat messages, images, files, and voice via the iLink Bot API CLI. Use when user wants to send a WeChat message, image, file, voice reply, or start the WeChat bot listener.
 ---
 
 # wx-cli — WeChat iLink Bot CLI
@@ -55,6 +55,21 @@ User scans QR code with WeChat and confirms. Token saved to `~/.wx-cli/accounts/
 | `/status` | Show bot ID, base URL, login time |
 | `/login` | Re-authenticate with new QR code |
 | `/quit` | Exit |
+
+### Send a voice reply (TTS)
+
+Generate a voice message from text and send as an audio file:
+
+```bash
+MP3=$(bash ~/.claude/skills/wx-cli/shell/handlers/tts.sh "要转换的文本")
+~/.claude/skills/wx-cli/bin/wx --profile NAME send --to USER_ID --ctx TOKEN --file "$MP3"
+rm -f "$MP3"
+```
+
+Requires `edge-tts`. Install via:
+```bash
+bash ~/.claude/skills/wx-cli/shell/setup-voice.sh
+```
 
 ### Send a file on behalf of user
 

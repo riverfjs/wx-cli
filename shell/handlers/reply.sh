@@ -1,6 +1,6 @@
 #!/bin/bash
 # Handle a single incoming message: call Claude and reply via wx send.
-# Usage: bash reply.sh <profile> <from_user_id> <context_token> <text> <timestamp> [image_path] [ref_text]
+# Usage: bash reply.sh <profile> <from_user_id> <context_token> <text> <timestamp> [image_path] [file_path] [file_name] [msg_type]
 set -eo pipefail
 
 PROFILE="$1"
@@ -11,7 +11,9 @@ TS="$5"
 IMAGE_PATH="$6"
 FILE_PATH="$7"
 FILE_NAME="$8"
+MSG_TYPE="$9"
 
+export PATH="$HOME/.local/bin:$PATH"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 WX="$HOME/.claude/skills/wx-cli/bin/wx"

@@ -15,10 +15,11 @@
 ## 功能
 
 - 扫码登录，支持多 profile（无需 appID/secret）
-- 收发文本、图片、文件、视频（AES-128-ECB 加密 CDN 上传）
+- 收发文本、图片、文件、视频、语音（AES-128-ECB 加密 CDN 上传）
 - 交互式 REPL + 联系人管理
 - 守护进程模式：`monitor`（JSON lines）+ `send`（非交互）
-- Claude 自动回复机器人，带对话历史和思考反馈
+- Claude 自动回复机器人，带对话历史和 typing 状态指示
+- 语音消息：接收语音转写 + TTS 语音回复（edge-tts）
 - 微信公众号 webhook：远程登录、会话过期自动重连、消息推送
 - Root 管理：服务状态、Bot 控制、模板管理，全在微信里操作
 - 多 profile 进程隔离（`WX_PROFILE` 环境变量）
@@ -31,10 +32,11 @@
 git clone <repo-url> ~/.claude/skills/wx-cli
 cd ~/.claude/skills/wx-cli
 bash shell/build.sh                        # 编译 bin/wx
-cp -r wx-push ~/.claude/skills/wx-push     # 安装推送 skill
-cp -r wx-schedule ~/.claude/skills/wx-schedule  # 安装定时任务 skill
+cp -r skills/wx-push ~/.claude/skills/wx-push       # 安装推送 skill
+cp -r skills/wx-schedule ~/.claude/skills/wx-schedule  # 安装定时任务 skill
 bin/wx --profile mybot login               # 扫码登录
 bash shell/bot.sh start mybot              # 启动 Claude 自动回复
+bash shell/setup-voice.sh                  # 安装语音依赖 (可选, 无需 sudo)
 bash tools/setup-hud.sh                    # 配置状态栏 + /usage 用量查询 (可选, 仅订阅模式)
 ```
 
@@ -79,6 +81,7 @@ bin/wx --profile work monitor
 # 非交互发送
 bin/wx --profile work send --to USER_ID --ctx CONTEXT_TOKEN --text "hello"
 bin/wx --profile work send --to USER_ID --ctx CONTEXT_TOKEN --image /path/to/pic.png
+bin/wx --profile work send --to USER_ID --ctx CONTEXT_TOKEN --file /path/to/voice.mp3
 ```
 
 * * *
@@ -104,10 +107,10 @@ bash shell/bot.sh log work                 # 日志
 | `/usage` | Claude 用量状态 (仅订阅模式) |
 
 **行为:**
-- 仅处理文本和语音转写，其他类型返回提示
+- 处理文本、语音转写、图片、文件，其他类型返回提示
+- 处理消息时显示"正在输入"typing 状态
 - 每用户对话历史注入为上下文
 - 系统提示词支持 `{profile}`, `{to_user_id}`, `{context_token}` 替换
-- 5s 思考超时发送 "Thinking..." 反馈
 - Claude 用量 85% 时自动限流
 
 * * *
@@ -204,13 +207,12 @@ shell/
   bot.sh               Bot 进程管理 (start/stop/status/log)
   serve.sh             Serve + ngrok 管理
   wx-bot.sh            Claude 自动回复守护进程
+  setup-voice.sh       语音依赖安装 (edge-tts)
   handlers/reply.sh    消息处理器
-wx-push/               推送 skill (安装到 ~/.claude/skills/wx-push)
-  SKILL.md             Skill 定义
-  scripts/push.sh      推送封装 (PUSH_KEY session token 鉴权)
-wx-schedule/           定时任务 skill (安装到 ~/.claude/skills/wx-schedule)
-  SKILL.md             Skill 定义
-  scripts/schedule.sh  定时任务管理封装
+  handlers/tts.sh      TTS 语音合成 (text → MP3)
+skills/
+  wx-push/             推送 skill (安装到 ~/.claude/skills/wx-push)
+  wx-schedule/         定时任务 skill (安装到 ~/.claude/skills/wx-schedule)
 tools/
   hud_wrapper.sh       claude-hud 状态栏 + rate_limits 缓存
   setup-hud.sh         一键配置 statusLine
@@ -241,6 +243,11 @@ prompts/
 - 发送封装: `{"msg": {WeixinMessage}}`，`from_user_id` 必须为 `""`
 - 媒体 `aes_key`: `base64(utf8_bytes_of_hex_key)` — 不是 `base64(raw_bytes)`
 - Token 有效期约 24h，过期需重新登录
+
+## 已知限制
+
+- **语音发送**: iLink Bot API 不支持 bot 发送原生语音条（voice_item type=3），API 返回成功但客户端静默丢弃。TTS 语音以 MP3 文件形式发送。接收语音转写正常。
+- **群聊**: iLink API 仅支持 1:1 私聊，不支持群消息。
 
 * * *
 

@@ -124,6 +124,6 @@ Or just send a message to chat." &
   fi
 
   # dispatch to handler (fully detached from pipeline)
-  bash "$HANDLER" "$PROFILE" "$from" "$ctx" "$text" "$ts" "$image_path" "$file_path" "$file_name" </dev/null &
+  bash "$HANDLER" "$PROFILE" "$from" "$ctx" "$text" "$ts" "$image_path" "$file_path" "$file_name" "$type" </dev/null &
 
 done

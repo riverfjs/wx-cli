@@ -35,6 +35,8 @@ func DetectMediaType(path string) int {
 		return 1
 	case ".mp4", ".avi", ".mov", ".mkv":
 		return 2
+	case ".silk", ".slk":
+		return 3
 	default:
 		return 3
 	}
