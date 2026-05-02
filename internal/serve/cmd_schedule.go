@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -34,10 +35,9 @@ func handleScheduleCmd(w http.ResponseWriter, msg *wxMessage, cfg *Config, profi
 
 	case "list":
 		targetProfile := profile
-		if isRoot && len(parts) >= 3 {
-			if parts[2] == "all" {
-				targetProfile = ""
-			} else {
+		if isRoot {
+			targetProfile = ""
+			if len(parts) >= 3 {
 				targetProfile = parts[2]
 			}
 		}
@@ -46,15 +46,24 @@ func handleScheduleCmd(w http.ResponseWriter, msg *wxMessage, cfg *Config, profi
 			replyPassive(w, msg, "无定时任务")
 			return
 		}
-		var lines []string
-		for _, s := range schedules {
-			status := "✓"
-			if !s.Enabled {
-				status = "✗"
-			}
-			lines = append(lines, fmt.Sprintf("[%s] %s %s %s\n  %s", s.ID, status, s.Cron, shortID(s.Profile), truncate(s.Command, 40)))
+		showGroup := isRoot && targetProfile == ""
+		if showGroup {
+			sort.Slice(schedules, func(i, j int) bool { return schedules[i].Profile < schedules[j].Profile })
 		}
-		replyPassive(w, msg, strings.Join(lines, "\n\n"))
+		var lines []string
+		lastProfile := ""
+		for _, s := range schedules {
+			if showGroup && s.Profile != lastProfile {
+				lines = append(lines, fmt.Sprintf("── %s ──", shortID(s.Profile)))
+				lastProfile = s.Profile
+			}
+			st := "✓"
+			if !s.Enabled {
+				st = "✗"
+			}
+			lines = append(lines, fmt.Sprintf("[%s] %s %s  %s", s.ID, st, s.Cron, truncate(s.Command, 35)))
+		}
+		replyPassive(w, msg, strings.Join(lines, "\n"))
 
 	case "del":
 		if len(parts) < 3 {

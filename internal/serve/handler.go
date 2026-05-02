@@ -11,7 +11,7 @@ import (
 
 const helpText = "可用命令:\n登录 — 触发 iLink 登录\n状态 — 查看登录状态\n定时 — 管理定时任务\n帮助 — 显示本帮助"
 
-const rootHelpText = "管理命令 (root):\n服务 — 服务状态\n活跃 — 活跃 Bot 列表\n历史 — 最新聊天记录\n重启 — 重启所有 Bot\n关闭 — 停止所有 Bot\n广播 <消息> — 推送给所有用户\n定时 list all — 查看全部定时任务\n模板 add/list/del — 模板管理"
+const rootHelpText = "管理命令 (root):\n服务 — 服务状态\n活跃 — 活跃 Bot 列表\n历史 — 最新聊天记录\n重启 — 重启所有 Bot\n关闭 — 停止所有 Bot\n广播 <消息> — 推送给所有用户\n定时 list — 查看全部定时任务\n模板 add/list/del — 模板管理"
 
 func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	body, err := io.ReadAll(r.Body)
