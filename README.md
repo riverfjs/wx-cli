@@ -32,6 +32,7 @@ git clone <repo-url> ~/.claude/skills/wx-cli
 cd ~/.claude/skills/wx-cli
 bash shell/build.sh                        # 编译 bin/wx
 cp -r wx-push ~/.claude/skills/wx-push     # 安装推送 skill
+cp -r wx-schedule ~/.claude/skills/wx-schedule  # 安装定时任务 skill
 bin/wx --profile mybot login               # 扫码登录
 bash shell/bot.sh start mybot              # 启动 Claude 自动回复
 bash tools/setup-hud.sh                    # 配置状态栏 + /usage 用量查询 (可选, 仅订阅模式)
@@ -207,6 +208,9 @@ shell/
 wx-push/               推送 skill (安装到 ~/.claude/skills/wx-push)
   SKILL.md             Skill 定义
   scripts/push.sh      推送封装 (PUSH_KEY session token 鉴权)
+wx-schedule/           定时任务 skill (安装到 ~/.claude/skills/wx-schedule)
+  SKILL.md             Skill 定义
+  scripts/schedule.sh  定时任务管理封装
 tools/
   hud_wrapper.sh       claude-hud 状态栏 + rate_limits 缓存
   setup-hud.sh         一键配置 statusLine
@@ -227,6 +231,7 @@ prompts/
     wx_token                    微信验证 Token (自动生成)
     mapping.json                alias → OpenID 映射 (hash → openid)
     templates.json              推送模板注册
+    schedules.json              定时任务配置
 ```
 
 ## 协议备注
