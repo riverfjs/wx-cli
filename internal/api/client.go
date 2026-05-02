@@ -154,6 +154,35 @@ func SendMessage(cred *Credential, msg *WeixinMessage) error {
 	return nil
 }
 
+func GetConfig(cred *Credential, userID, ctxToken string) (string, error) {
+	body := map[string]interface{}{
+		"ilink_user_id": userID,
+		"context_token": ctxToken,
+		"base_info":     newBaseInfo(),
+	}
+	data, err := Post(cred.BaseURL, "ilink/bot/getconfig", body, cred.BotToken)
+	if err != nil {
+		return "", err
+	}
+	var resp GetConfigResp
+	json.Unmarshal(data, &resp)
+	if resp.Ret != nil && *resp.Ret != 0 {
+		return "", fmt.Errorf("getconfig ret=%d", *resp.Ret)
+	}
+	return resp.TypingTicket, nil
+}
+
+func SendTyping(cred *Credential, userID, ticket string, status int) error {
+	body := map[string]interface{}{
+		"ilink_user_id": userID,
+		"typing_ticket": ticket,
+		"status":        status,
+		"base_info":     newBaseInfo(),
+	}
+	_, err := Post(cred.BaseURL, "ilink/bot/sendtyping", body, cred.BotToken)
+	return err
+}
+
 func GetUploadURL(cred *Credential, params map[string]interface{}) (*UploadURLResp, error) {
 	params["base_info"] = newBaseInfo()
 	data, err := Post(cred.BaseURL, "ilink/bot/getuploadurl", params, cred.BotToken)

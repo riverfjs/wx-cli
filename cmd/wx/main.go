@@ -114,6 +114,26 @@ func parseServeArgs(args []string) (port int, wxToken, wxAppID, wxSecret, wxRoot
 	return
 }
 
+func parseTypingArgs(args []string) (to, ctx, status string) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--to":
+			if i+1 < len(args) {
+				to = args[i+1]; i++
+			}
+		case "--ctx":
+			if i+1 < len(args) {
+				ctx = args[i+1]; i++
+			}
+		case "--status":
+			if i+1 < len(args) {
+				status = args[i+1]; i++
+			}
+		}
+	}
+	return
+}
+
 func main() {
 	profile, args := parseGlobal(os.Args[1:])
 
@@ -185,6 +205,27 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "typing":
+		cred := requireCred(profile)
+		to, ctx, status := parseTypingArgs(args[1:])
+		if to == "" || ctx == "" {
+			fmt.Fprintln(os.Stderr, "Usage: wx --profile NAME typing --to USER_ID --ctx TOKEN --status start|stop")
+			os.Exit(1)
+		}
+		ticket, err := api.GetConfig(cred, to, ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "GetConfig failed: %s\n", err)
+			os.Exit(1)
+		}
+		s := 1
+		if status == "stop" {
+			s = 2
+		}
+		if err := api.SendTyping(cred, to, ticket, s); err != nil {
+			fmt.Fprintf(os.Stderr, "SendTyping failed: %s\n", err)
+			os.Exit(1)
+		}
+
 	case "serve":
 		port, wxToken, wxAppID, wxSecret, wxRoot := parseServeArgs(args[1:])
 		wxToken = envDefault(wxToken, "WX_TOKEN")
@@ -211,6 +252,7 @@ func main() {
   wx accounts                                   List saved profiles
   wx --profile NAME monitor                     Daemon: JSON lines per message
   wx --profile NAME send --to ID --ctx TOKEN --text MSG
+  wx --profile NAME typing --to ID --ctx TOKEN --status start|stop
   wx --profile NAME                             Interactive REPL
   wx serve --wx-token TOKEN [--port 8080]       WeChat webhook server
 `, cB, cW, cB, cW)

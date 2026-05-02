@@ -61,8 +61,13 @@ elif [[ -n "$FILE_PATH" ]]; then
 fi
 prompt="${prompt}${current}"
 
-# thinking timer
-( sleep 5 && $WX $PF send --to "$FROM" --ctx "$CTX" --text "Thinking..." ) 2>/dev/null &
+# typing indicator keepalive
+(
+  while true; do
+    $WX $PF typing --to "$FROM" --ctx "$CTX" --status start 2>/dev/null
+    sleep 5
+  done
+) &
 tpid=$!
 
 # call claude
@@ -76,6 +81,7 @@ fi
 reply=$(claude "${CLAUDE_ARGS[@]}" </dev/null 2>/tmp/wx-claude-err.log)
 
 kill $tpid 2>/dev/null || true; wait $tpid 2>/dev/null || true
+$WX $PF typing --to "$FROM" --ctx "$CTX" --status stop 2>/dev/null &
 
 # cleanup temp files
 [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]] && rm -f "$IMAGE_PATH"

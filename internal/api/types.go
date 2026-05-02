@@ -81,3 +81,8 @@ type UploadURLResp struct {
 	UploadParam   string `json:"upload_param,omitempty"`
 	UploadFullURL string `json:"upload_full_url,omitempty"`
 }
+
+type GetConfigResp struct {
+	Ret          *int   `json:"ret,omitempty"`
+	TypingTicket string `json:"typing_ticket,omitempty"`
+}
