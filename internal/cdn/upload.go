@@ -87,11 +87,11 @@ func Upload(cred *api.Credential, filePath, toUserID string) (*UploadedFile, err
 		return nil, err
 	}
 	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 
 	dlParam := resp.Header.Get("x-encrypted-param")
 	if dlParam == "" {
-		return nil, fmt.Errorf("CDN missing x-encrypted-param header")
+		return nil, fmt.Errorf("CDN upload failed: status=%d body=%s", resp.StatusCode, string(body[:min(len(body), 200)]))
 	}
 
 	return &UploadedFile{

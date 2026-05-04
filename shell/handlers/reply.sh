@@ -28,7 +28,12 @@ PF=""
 SEND_HELPER="/tmp/wx-send-media-$$.sh"
 cat > "$SEND_HELPER" << ENDHELPER
 #!/bin/bash
-$WX $PF send --to "$FROM" --ctx "$CTX" "\$@"
+out=\$($WX $PF send --to "$FROM" --ctx "$CTX" "\$@" 2>&1)
+rc=\$?
+if [ \$rc -ne 0 ]; then
+  echo "SEND_ERROR: \$out" >&2
+  exit \$rc
+fi
 ENDHELPER
 chmod +x "$SEND_HELPER"
 
