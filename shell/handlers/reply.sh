@@ -80,7 +80,7 @@ fi
 if [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]]; then
   CLAUDE_ARGS+=(--add-dir "$(dirname "$FILE_PATH")")
 fi
-CLAUDE_ERR="$HOME/.wx-cli/logs/claude-err_${PROFILE}_${FROM}.log"
+CLAUDE_ERR="$HOME/.wx-cli/logs/claude-err_${PROFILE}.log"
 reply=$(claude "${CLAUDE_ARGS[@]}" </dev/null 2>"$CLAUDE_ERR")
 
 kill $tpid 2>/dev/null || true; wait $tpid 2>/dev/null || true
