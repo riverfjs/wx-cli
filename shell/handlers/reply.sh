@@ -80,7 +80,8 @@ fi
 if [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]]; then
   CLAUDE_ARGS+=(--add-dir "$(dirname "$FILE_PATH")")
 fi
-reply=$(claude "${CLAUDE_ARGS[@]}" </dev/null 2>/tmp/wx-claude-err.log)
+CLAUDE_ERR="$HOME/.wx-cli/logs/claude-err_${PROFILE}_${FROM}.log"
+reply=$(claude "${CLAUDE_ARGS[@]}" </dev/null 2>"$CLAUDE_ERR")
 
 kill $tpid 2>/dev/null || true; wait $tpid 2>/dev/null || true
 $WX $PF typing --to "$FROM" --ctx "$CTX" --status stop 2>/dev/null &
@@ -96,7 +97,10 @@ if [[ -n "$reply" ]]; then
     "$(jq -Rns --arg s "$reply" '$s')" > "$hfile"
   echo "[$TS] replied to ${FROM:0:8}..."
 else
-  echo "[$TS] claude failed:" >&2
-  cat /tmp/wx-claude-err.log >&2
+  echo "[$TS] claude failed (see $CLAUDE_ERR)" >&2
+  err_detail=$(head -5 "$CLAUDE_ERR" 2>/dev/null)
+  printf '{"q":%s,"a":%s}\n' \
+    "$(jq -Rns --arg s "$TEXT" '$s')" \
+    "$(jq -Rns --arg s "[ERROR] $err_detail" '$s')" > "$hfile"
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "(Failed, please try again)"
 fi
