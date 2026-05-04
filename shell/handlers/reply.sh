@@ -24,10 +24,16 @@ mkdir -p "$HISTORY_DIR"
 PF=""
 [[ -n "$PROFILE" && "$PROFILE" != "default" ]] && PF="--profile $PROFILE"
 
+# create media send helper (agent calls this, never sees ctx)
+SEND_HELPER="/tmp/wx-send-media-$$.sh"
+cat > "$SEND_HELPER" << ENDHELPER
+#!/bin/bash
+$WX $PF send --to "$FROM" --ctx "$CTX" "\$@"
+ENDHELPER
+chmod +x "$SEND_HELPER"
+
 # build system prompt
-role=$(sed -e "s|{profile}|$PROFILE|g" \
-           -e "s|{to_user_id}|$FROM|g" \
-           -e "s|{context_token}|$CTX|g" "$ROLE_TEMPLATE")
+role=$(sed -e "s|{send_helper}|$SEND_HELPER|g" "$ROLE_TEMPLATE")
 
 # load 1-round history
 prompt=""
@@ -92,6 +98,7 @@ $WX $PF typing --to "$FROM" --ctx "$CTX" --status stop 2>/dev/null &
 # cleanup temp files
 [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]] && rm -f "$IMAGE_PATH"
 [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]] && rm -f "$FILE_PATH"
+rm -f "$SEND_HELPER"
 
 if [[ $claude_exit -ne 0 ]]; then
   echo "$reply" > "$CLAUDE_ERR"
