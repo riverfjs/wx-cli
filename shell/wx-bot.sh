@@ -102,8 +102,16 @@ $WX $PROFILE_FLAG monitor | while IFS= read -r line; do
   # built-in commands (no Claude)
   if [[ "$text" == "/help" ]]; then
     $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" \
-      --text "Commands: /help /ping /usage
+      --text "Commands: /help /ping /usage /new
 Or just send a message to chat." &
+    continue
+  fi
+  if [[ "$text" == "/new" ]]; then
+    session_hash=$(echo -n "${PROFILE}_${from}" | sha256sum | cut -c1-32)
+    session_uuid="${session_hash:0:8}-${session_hash:8:4}-${session_hash:12:4}-${session_hash:16:4}-${session_hash:20:12}"
+    find ~/.claude/projects/ -name "${session_uuid}.jsonl" -delete 2>/dev/null
+    find ~/.claude/projects/ -name "${session_uuid}" -type d -exec rm -rf {} + 2>/dev/null
+    $WX $PROFILE_FLAG send --to "$from" --ctx "$ctx" --text "Session cleared." &
     continue
   fi
   if [[ "$text" == "/ping" ]]; then

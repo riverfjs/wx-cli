@@ -18,8 +18,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 WX="$HOME/.claude/skills/wx-cli/bin/wx"
 ROLE_TEMPLATE="$PROJECT_DIR/prompts/system_role.md"
-HISTORY_DIR="$HOME/.wx-cli/history/${PROFILE}"
-mkdir -p "$HISTORY_DIR"
 
 PF=""
 [[ -n "$PROFILE" && "$PROFILE" != "default" ]] && PF="--profile $PROFILE"
@@ -41,39 +39,27 @@ export SEND_HELPER
 # build system prompt
 role=$(sed -e "s|{send_helper}|$SEND_HELPER|g" "$ROLE_TEMPLATE")
 
-# load 1-round history
-prompt=""
-hfile="$HISTORY_DIR/${FROM}.json"
-if [[ -f "$hfile" ]]; then
-  q=$(jq -r '.q // empty' "$hfile" 2>/dev/null)
-  a=$(jq -r '.a // empty' "$hfile" 2>/dev/null)
-  if [[ -n "$q" && -n "$a" ]]; then
-    prompt="[Previous exchange]
-User: $q
-Assistant: $a
+# deterministic session UUID per profile+user
+SESSION_HASH=$(echo -n "${PROFILE}_${FROM}" | sha256sum | cut -c1-32)
+SESSION_UUID="${SESSION_HASH:0:8}-${SESSION_HASH:8:4}-${SESSION_HASH:12:4}-${SESSION_HASH:16:4}-${SESSION_HASH:20:12}"
 
-[Current message]
-"
-  fi
-fi
-# build current message with optional context
-current=""
+# build prompt
+prompt=""
 if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]]; then
-  current="${current}[User sent an image at $IMAGE_PATH — use the Read tool to view it, then respond.]
+  prompt="${prompt}[User sent an image at $IMAGE_PATH — use the Read tool to view it, then respond.]
 "
 fi
 if [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]]; then
-  current="${current}[User sent a file: ${FILE_NAME:-$(basename "$FILE_PATH")} at $FILE_PATH — use the Read tool to view it, then respond.]
+  prompt="${prompt}[User sent a file: ${FILE_NAME:-$(basename "$FILE_PATH")} at $FILE_PATH — use the Read tool to view it, then respond.]
 "
 fi
 if [[ -n "$TEXT" ]]; then
-  current="${current}User: $TEXT"
+  prompt="${prompt}$TEXT"
 elif [[ -n "$IMAGE_PATH" ]]; then
-  current="${current}User: Please analyze this image."
+  prompt="${prompt}Please analyze this image."
 elif [[ -n "$FILE_PATH" ]]; then
-  current="${current}User: Please analyze this file."
+  prompt="${prompt}Please analyze this file."
 fi
-prompt="${prompt}${current}"
 
 # typing indicator keepalive
 (
@@ -85,7 +71,7 @@ prompt="${prompt}${current}"
 tpid=$!
 
 # call claude
-CLAUDE_ARGS=(--print --model claude-sonnet-4-6 --permission-mode bypassPermissions --append-system-prompt "$role" -p "$prompt")
+CLAUDE_ARGS=(--print --model claude-sonnet-4-6 --permission-mode bypassPermissions --resume "$SESSION_UUID" --append-system-prompt "$role" -p "$prompt")
 if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]]; then
   CLAUDE_ARGS+=(--add-dir "$(dirname "$IMAGE_PATH")")
 fi
@@ -109,15 +95,9 @@ rm -f "$SEND_HELPER"
 if [[ $claude_exit -ne 0 ]]; then
   echo "$reply" > "$CLAUDE_ERR"
   echo "[$TS] claude failed (exit=$claude_exit, see $CLAUDE_ERR)" >&2
-  printf '{"q":%s,"a":%s}\n' \
-    "$(jq -Rns --arg s "$TEXT" '$s')" \
-    "$(jq -Rns --arg s "[ERROR] $reply" '$s')" > "$hfile"
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "(Failed, please try again)"
 elif [[ -n "$reply" ]]; then
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "$reply"
-  printf '{"q":%s,"a":%s}\n' \
-    "$(jq -Rns --arg s "$TEXT" '$s')" \
-    "$(jq -Rns --arg s "$reply" '$s')" > "$hfile"
   echo "[$TS] replied to ${FROM:0:8}..."
 else
   echo "[$TS] claude returned empty" >&2
