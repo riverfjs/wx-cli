@@ -43,23 +43,43 @@ PYEOF
 }
 
 check_usage() {
-  python3 - <<'PYEOF'
+  python3 - "$PROFILE" <<'PYEOF'
 import json, time, sys, os
-CACHE = "/tmp/claude_rate_limits.json"
-if not os.path.exists(CACHE):
-    print("仅订阅模式支持用量查询")
-    sys.exit(0)
+
+def bar(pct, width=10):
+    filled = round(pct / 100 * width)
+    return "█" * filled + "░" * (width - filled)
+
+def time_until(ts):
+    if not ts: return "?"
+    secs = max(0, int(ts) - int(time.time()))
+    h, rem = divmod(secs, 3600)
+    m = rem // 60
+    return f"{h//24}d {h%24}h" if h >= 24 else f"{h}h {m}m"
+
+profile = sys.argv[1] if len(sys.argv) > 1 else ""
+rl = None
+try: rl = json.load(open("/tmp/claude_rate_limits.json"))
+except: pass
+
+lines = ["📊 Claude"]
 try:
-    with open(CACHE) as f:
-        rl = json.load(f)
-except Exception:
-    print("用量数据读取失败")
-    sys.exit(0)
-fh = rl.get("five_hour", {})
-pct = fh.get("used_percentage", 0)
-secs = max(0, int(fh.get("resets_at", 0)) - int(time.time()))
-h, m = divmod(secs // 60, 60)
-print(f"Claude 用量: {round(pct)}%, {h}h {m}m 后重置")
+    cw = json.load(open(f"/tmp/claude_context_{profile}.json"))
+    pct = cw.get("pct", 0)
+    lines.append(f"Context {bar(pct)} {pct}%")
+except: pass
+if rl:
+    fh = rl.get("five_hour", {})
+    if fh:
+        pct = fh.get("used_percentage", 0)
+        lines.append(f"Usage {bar(round(pct))} {round(pct)}% (resets in {time_until(fh.get('resets_at'))})")
+    sw = rl.get("seven_day", {})
+    if sw:
+        pct = sw.get("used_percentage", 0)
+        lines.append(f"Weekly {bar(round(pct))} {round(pct)}% (resets in {time_until(sw.get('resets_at'))})")
+if len(lines) == 1:
+    lines.append("暂无数据")
+print("\n".join(lines))
 PYEOF
 }
 

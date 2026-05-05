@@ -107,14 +107,13 @@ if [[ $claude_exit -ne 0 ]]; then
 elif [[ -n "$reply" ]]; then
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "$reply"
   echo "[$TS] replied to ${FROM:0:8}..."
-  # context usage check
-  ctx_used=$(echo "$raw" | jq '[.usage.input_tokens, .usage.cache_read_input_tokens, .usage.cache_creation_input_tokens] | add // 0' 2>/dev/null)
-  ctx_window=$(echo "$raw" | jq '[.modelUsage[]] | .[0].contextWindow // 200000' 2>/dev/null)
-  if [[ -n "$ctx_used" && -n "$ctx_window" && "$ctx_window" -gt 0 ]]; then
-    ctx_pct=$(( ctx_used * 100 / ctx_window ))
-    if (( ctx_pct > 80 )); then
-      $WX $PF send --to "$FROM" --ctx "$CTX" --text "💡 上下文已用 ${ctx_pct}%，发 /new 可开启新会话" 2>/dev/null &
-    fi
+  # cache context per profile + warn if high
+  echo "$raw" | jq '{used: ([.usage.input_tokens, .usage.cache_read_input_tokens, .usage.cache_creation_input_tokens] | add // 0), window: ([.modelUsage[]] | .[0].contextWindow // 200000)}' 2>/dev/null \
+    | jq '. + {pct: (if .window > 0 then (.used * 100 / .window | floor) else 0 end)}' \
+    > "/tmp/claude_context_${PROFILE}.json" 2>/dev/null
+  ctx_pct=$(jq -r '.pct // 0' "/tmp/claude_context_${PROFILE}.json" 2>/dev/null)
+  if [[ -n "$ctx_pct" ]] && (( ctx_pct > 80 )); then
+    $WX $PF send --to "$FROM" --ctx "$CTX" --text "💡 上下文已用 ${ctx_pct}%，发 /new 可开启新会话" 2>/dev/null &
   fi
 else
   echo "[$TS] claude returned empty" >&2
