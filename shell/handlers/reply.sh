@@ -77,7 +77,7 @@ fi
 tpid=$!
 
 # call claude
-CLAUDE_ARGS=(--print --output-format json --model claude-sonnet-4-6 --permission-mode bypassPermissions $SESSION_FLAG --append-system-prompt "$role" -p "$prompt")
+CLAUDE_ARGS=(--print --output-format json --model opus --permission-mode bypassPermissions $SESSION_FLAG --append-system-prompt "$role" -p "$prompt")
 if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]]; then
   CLAUDE_ARGS+=(--add-dir "$(dirname "$IMAGE_PATH")")
 fi
@@ -108,12 +108,14 @@ elif [[ -n "$reply" ]]; then
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "$reply"
   echo "[$TS] replied to ${FROM:0:8}..."
   # cache context per profile + warn if high
-  echo "$raw" | jq '{used: ([.usage.input_tokens, .usage.cache_read_input_tokens, .usage.cache_creation_input_tokens] | add // 0), window: ([.modelUsage[]] | .[0].contextWindow // 200000)}' 2>/dev/null \
-    | jq '. + {pct: (if .window > 0 then (.used * 100 / .window | floor) else 0 end)}' \
-    > "/tmp/claude_context_${PROFILE}.json" 2>/dev/null
-  ctx_pct=$(jq -r '.pct // 0' "/tmp/claude_context_${PROFILE}.json" 2>/dev/null)
-  if [[ -n "$ctx_pct" ]] && (( ctx_pct > 80 )); then
-    $WX $PF send --to "$FROM" --ctx "$CTX" --text "💡 上下文已用 ${ctx_pct}%，发 /new 可开启新会话" 2>/dev/null &
+  ctx_window=$(echo "$raw" | jq '[.modelUsage[]] | .[0].contextWindow // 0' 2>/dev/null)
+  if [[ -n "$ctx_window" && "$ctx_window" -gt 0 ]]; then
+    ctx_used=$(echo "$raw" | jq '[.usage.input_tokens, .usage.cache_read_input_tokens, .usage.cache_creation_input_tokens] | add // 0' 2>/dev/null)
+    ctx_pct=$(( ctx_used * 100 / ctx_window ))
+    echo "{\"used\":$ctx_used,\"window\":$ctx_window,\"pct\":$ctx_pct}" > "/tmp/claude_context_${PROFILE}.json"
+    if (( ctx_pct > 80 )); then
+      $WX $PF send --to "$FROM" --ctx "$CTX" --text "💡 上下文已用 ${ctx_pct}%，发 /new 可开启新会话" 2>/dev/null &
+    fi
   fi
 else
   echo "[$TS] claude returned empty" >&2
