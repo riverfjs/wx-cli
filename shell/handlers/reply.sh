@@ -77,7 +77,7 @@ fi
 tpid=$!
 
 # call claude
-CLAUDE_ARGS=(--print --model claude-sonnet-4-6 --permission-mode bypassPermissions $SESSION_FLAG --append-system-prompt "$role" -p "$prompt")
+CLAUDE_ARGS=(--print --output-format json --model claude-sonnet-4-6 --permission-mode bypassPermissions $SESSION_FLAG --append-system-prompt "$role" -p "$prompt")
 if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]]; then
   CLAUDE_ARGS+=(--add-dir "$(dirname "$IMAGE_PATH")")
 fi
@@ -86,7 +86,7 @@ if [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]]; then
 fi
 CLAUDE_ERR="$HOME/.wx-cli/logs/claude-err_${PROFILE}.log"
 set +e
-reply=$(claude "${CLAUDE_ARGS[@]}" </dev/null 2>"$CLAUDE_ERR")
+raw=$(claude "${CLAUDE_ARGS[@]}" </dev/null 2>"$CLAUDE_ERR")
 claude_exit=$?
 set -e
 
@@ -98,13 +98,24 @@ $WX $PF typing --to "$FROM" --ctx "$CTX" --status stop 2>/dev/null &
 [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]] && rm -f "$FILE_PATH"
 rm -f "$SEND_HELPER"
 
+reply=$(echo "$raw" | jq -r '.result // empty' 2>/dev/null)
+
 if [[ $claude_exit -ne 0 ]]; then
-  echo "$reply" > "$CLAUDE_ERR"
+  echo "$raw" > "$CLAUDE_ERR"
   echo "[$TS] claude failed (exit=$claude_exit, see $CLAUDE_ERR)" >&2
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "(Failed, please try again)"
 elif [[ -n "$reply" ]]; then
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "$reply"
   echo "[$TS] replied to ${FROM:0:8}..."
+  # context usage check
+  ctx_used=$(echo "$raw" | jq '[.usage.input_tokens, .usage.cache_read_input_tokens, .usage.cache_creation_input_tokens] | add // 0' 2>/dev/null)
+  ctx_window=$(echo "$raw" | jq '[.modelUsage[]] | .[0].contextWindow // 200000' 2>/dev/null)
+  if [[ -n "$ctx_used" && -n "$ctx_window" && "$ctx_window" -gt 0 ]]; then
+    ctx_pct=$(( ctx_used * 100 / ctx_window ))
+    if (( ctx_pct > 80 )); then
+      $WX $PF send --to "$FROM" --ctx "$CTX" --text "💡 上下文已用 ${ctx_pct}%，发 /new 可开启新会话" 2>/dev/null &
+    fi
+  fi
 else
   echo "[$TS] claude returned empty" >&2
   $WX $PF send --to "$FROM" --ctx "$CTX" --text "(Failed, please try again)"
