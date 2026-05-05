@@ -18,8 +18,9 @@
 - 收发文本、图片、文件、视频、语音（AES-128-ECB 加密 CDN 上传）
 - 交互式 REPL + 联系人管理
 - 守护进程模式：`monitor`（JSON lines）+ `send`（非交互）
-- Claude 自动回复机器人，带对话历史和 typing 状态指示
+- Claude 自动回复机器人，持久化 session + typing 状态 + context 用量追踪
 - 语音消息：接收语音转写 + TTS 语音回复（edge-tts）
+- Tool 执行进度推送（PostToolUse hook，通知 on/off 切换）
 - 微信公众号 webhook：远程登录、会话过期自动重连、消息推送
 - Root 管理：服务状态、Bot 控制、模板管理，全在微信里操作
 - 多 profile 进程隔离（`WX_PROFILE` 环境变量）
@@ -104,14 +105,17 @@ bash shell/bot.sh log work                 # 日志
 |------|------|
 | `/ping` | `pong` |
 | `/help` | 命令列表 |
-| `/usage` | Claude 用量状态 (仅订阅模式) |
+| `/usage` | Context / Usage / Weekly 用量 (bar 格式) |
+| `/new` | 清除对话历史，开启新 session |
 
 **行为:**
 - 处理文本、语音转写、图片、文件，其他类型返回提示
+- Agent 发送图片/文件通过临时 send helper 脚本（封装 ctx，agent 不可见）
 - 处理消息时显示"正在输入"typing 状态
-- 每用户对话历史注入为上下文
-- 系统提示词支持 `{profile}`, `{to_user_id}`, `{context_token}` 替换
+- 持久化 session（`--resume`），跨消息保持上下文
+- Context 超 80% 自动提醒发 `/new`
 - Claude 用量 85% 时自动限流
+- CDN 上传失败自动重试 3 次
 
 * * *
 
@@ -144,6 +148,7 @@ WX_APPID=你的appid WX_SECRET=你的secret WX_ROOT=你的openid bash shell/serv
 |------|------|------|
 | `登录` | 所有人 | 获取登录链接，授权后自动启动 bot |
 | `状态` | 所有人 | 查看登录状态 |
+| `通知 on/off` | 所有人 | Tool 执行进度推送开关 |
 | `帮助` | 所有人 | 命令列表 |
 | `服务` | root | 服务运行状态 |
 | `活跃` | root | 活跃 Bot 列表 |
@@ -198,7 +203,14 @@ internal/
   msg/                 收发消息 + monitor 循环
   serve/               公众号 webhook 服务
     serve.go           配置 + HTTP 路由
-    handler.go         命令分发 + 登录/重登/推送
+    handler.go         命令分发
+    cmd_user.go        登录/状态
+    cmd_admin.go       Root 管理命令
+    cmd_push.go        推送/注册
+    cmd_schedule.go    定时任务命令
+    cmd_notify.go      通知开关
+    scheduler.go       内置 cron 调度器
+    session.go         Push token 管理
     wechat.go          XML 类型、签名、被动/异步/模板回复
     bot.go             Bot 管理 + profile/模板持久化
     state.go           进程状态 + 聊天历史查询
@@ -208,14 +220,17 @@ shell/
   serve.sh             Serve + ngrok 管理
   wx-bot.sh            Claude 自动回复守护进程
   setup-voice.sh       语音依赖安装 (edge-tts)
-  handlers/reply.sh    消息处理器
+  handlers/reply.sh    消息处理器 (session 管理 + context 追踪)
   handlers/tts.sh      TTS 语音合成 (text → MP3)
+  handlers/hook_notify.sh  Tool 执行进度 hook
 skills/
   wx-push/             推送 skill (安装到 ~/.claude/skills/wx-push)
   wx-schedule/         定时任务 skill (安装到 ~/.claude/skills/wx-schedule)
 tools/
   hud_wrapper.sh       claude-hud 状态栏 + rate_limits 缓存
   setup-hud.sh         一键配置 statusLine
+.claude/
+  settings.json        PostToolUse hook 配置
 prompts/
   system_role.md       系统提示词模板
 ```
@@ -226,7 +241,7 @@ prompts/
 ~/.wx-cli/
   accounts/{alias}.json         登录凭证 (alias = sha256(openid)[:12])
   sync/{alias}                  长轮询游标
-  history/{alias}/{uid}.json    对话历史
+  notify/{alias}                通知开关标记文件
   pids/                         PID 文件
   logs/                         日志文件
   serve/
