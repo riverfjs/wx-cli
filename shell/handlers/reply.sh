@@ -36,6 +36,7 @@ if [ \$rc -ne 0 ]; then
 fi
 ENDHELPER
 chmod +x "$SEND_HELPER"
+export SEND_HELPER
 
 # build system prompt
 role=$(sed -e "s|{send_helper}|$SEND_HELPER|g" "$ROLE_TEMPLATE")

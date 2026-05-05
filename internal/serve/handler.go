@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const helpText = "可用命令:\n登录 — 触发 iLink 登录\n状态 — 查看登录状态\n定时 — 管理定时任务\n帮助 — 显示本帮助"
+const helpText = "可用命令:\n登录 — 触发 iLink 登录\n状态 — 查看登录状态\n定时 — 管理定时任务\n通知 on/off — Tool 执行进度推送\n帮助 — 显示本帮助"
 
 const rootHelpText = "管理命令 (root):\n服务 — 服务状态\n活跃 — 活跃 Bot 列表\n历史 — 最新聊天记录\n重启 — 重启所有 Bot\n关闭 — 停止所有 Bot\n广播 <消息> — 推送给所有用户\n定时 list — 查看全部定时任务\n模板 add/list/del — 模板管理"
 
@@ -93,6 +93,8 @@ func handleMessage(w http.ResponseWriter, r *http.Request, cfg *Config) {
 			return
 		}
 		handleBroadcast(w, &msg, cfg, strings.TrimSpace(parts[1]))
+	case "通知", "notify":
+		handleNotify(w, &msg, profile, parts)
 	case "定时", "cron":
 		handleScheduleCmd(w, &msg, cfg, profile, isRoot, content)
 	case "模板", "template":

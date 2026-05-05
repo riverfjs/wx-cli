@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash shell/handlers/hook_notify.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
