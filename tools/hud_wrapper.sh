@@ -15,9 +15,6 @@ try:
     rl = d.get('rate_limits')
     if rl:
         open('/tmp/claude_rate_limits.json', 'w').write(json.dumps(rl))
-    cw = d.get('context_window')
-    if cw:
-        open('/tmp/claude_context_window.json', 'w').write(json.dumps(cw))
 except Exception:
     pass
 " 2>/dev/null || true
