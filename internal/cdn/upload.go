@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"wx-cli/internal/api"
 )
@@ -80,18 +81,33 @@ func Upload(cred *api.Credential, filePath, toUserID string) (*UploadedFile, err
 		return nil, fmt.Errorf("no upload URL returned")
 	}
 
-	req, _ := http.NewRequest("POST", cdnURL, bytes.NewReader(ciphertext))
-	req.Header.Set("Content-Type", "application/octet-stream")
-	resp, err := api.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	var dlParam string
+	for attempt := 0; attempt < 3; attempt++ {
+		req, _ := http.NewRequest("POST", cdnURL, bytes.NewReader(ciphertext))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		resp, err := api.Client.Do(req)
+		if err != nil {
+			if attempt < 2 {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 
-	dlParam := resp.Header.Get("x-encrypted-param")
-	if dlParam == "" {
-		return nil, fmt.Errorf("CDN upload failed: status=%d body=%s", resp.StatusCode, string(body[:min(len(body), 200)]))
+		dlParam = resp.Header.Get("x-encrypted-param")
+		if dlParam != "" {
+			break
+		}
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return nil, fmt.Errorf("CDN upload failed: status=%d body=%s", resp.StatusCode, string(body[:min(len(body), 200)]))
+		}
+		if attempt < 2 {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		return nil, fmt.Errorf("CDN upload failed after 3 attempts: status=%d body=%s", resp.StatusCode, string(body[:min(len(body), 200)]))
 	}
 
 	return &UploadedFile{
