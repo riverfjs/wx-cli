@@ -42,6 +42,12 @@ role=$(sed -e "s|{send_helper}|$SEND_HELPER|g" "$ROLE_TEMPLATE")
 # deterministic session UUID per profile+user
 SESSION_HASH=$(echo -n "${PROFILE}_${FROM}" | sha256sum | cut -c1-32)
 SESSION_UUID="${SESSION_HASH:0:8}-${SESSION_HASH:8:4}-${SESSION_HASH:12:4}-${SESSION_HASH:16:4}-${SESSION_HASH:20:12}"
+# first call creates session, subsequent calls resume
+if find ~/.claude/projects/ -name "${SESSION_UUID}.jsonl" 2>/dev/null | grep -q .; then
+  SESSION_FLAG="--resume $SESSION_UUID"
+else
+  SESSION_FLAG="--session-id $SESSION_UUID"
+fi
 
 # build prompt
 prompt=""
@@ -71,7 +77,7 @@ fi
 tpid=$!
 
 # call claude
-CLAUDE_ARGS=(--print --model claude-sonnet-4-6 --permission-mode bypassPermissions --resume "$SESSION_UUID" --append-system-prompt "$role" -p "$prompt")
+CLAUDE_ARGS=(--print --model claude-sonnet-4-6 --permission-mode bypassPermissions $SESSION_FLAG --append-system-prompt "$role" -p "$prompt")
 if [[ -n "$IMAGE_PATH" && -f "$IMAGE_PATH" ]]; then
   CLAUDE_ARGS+=(--add-dir "$(dirname "$IMAGE_PATH")")
 fi
