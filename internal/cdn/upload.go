@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"wx-cli/internal/api"
 )
@@ -57,7 +58,7 @@ func Upload(cred *api.Credential, filePath, toUserID string) (*UploadedFile, err
 	ciphertext := AesEcbEncrypt(plaintext, aesKey)
 	mt := DetectMediaType(filePath)
 
-	urlResp, err := api.GetUploadURL(cred, map[string]interface{}{
+	uploadParams := map[string]interface{}{
 		"filekey":       filekey,
 		"media_type":    mt,
 		"to_user_id":    toUserID,
@@ -66,32 +67,57 @@ func Upload(cred *api.Credential, filePath, toUserID string) (*UploadedFile, err
 		"filesize":      len(ciphertext),
 		"no_need_thumb": true,
 		"aeskey":        aesKeyHex,
-	})
-	if err != nil {
-		return nil, err
 	}
 
-	cdnURL := urlResp.UploadFullURL
-	if cdnURL == "" && urlResp.UploadParam != "" {
-		cdnURL = cdnBase + "/upload?encrypted_query_param=" +
-			url.QueryEscape(urlResp.UploadParam) + "&filekey=" + url.QueryEscape(filekey)
-	}
-	if cdnURL == "" {
-		return nil, fmt.Errorf("no upload URL returned")
-	}
+	var dlParam string
+	for attempt := 0; attempt < 3; attempt++ {
+		urlResp, err := api.GetUploadURL(cred, uploadParams)
+		if err != nil {
+			if attempt < 2 {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return nil, err
+		}
 
-	req, _ := http.NewRequest("POST", cdnURL, bytes.NewReader(ciphertext))
-	req.Header.Set("Content-Type", "application/octet-stream")
-	resp, err := api.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+		cdnURL := urlResp.UploadFullURL
+		if cdnURL == "" && urlResp.UploadParam != "" {
+			cdnURL = cdnBase + "/upload?encrypted_query_param=" +
+				url.QueryEscape(urlResp.UploadParam) + "&filekey=" + url.QueryEscape(filekey)
+		}
+		if cdnURL == "" {
+			if attempt < 2 {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return nil, fmt.Errorf("no upload URL returned")
+		}
 
-	dlParam := resp.Header.Get("x-encrypted-param")
-	if dlParam == "" {
-		return nil, fmt.Errorf("CDN upload failed: status=%d body=%s", resp.StatusCode, string(body[:min(len(body), 200)]))
+		req, _ := http.NewRequest("POST", cdnURL, bytes.NewReader(ciphertext))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		resp, err := api.Client.Do(req)
+		if err != nil {
+			if attempt < 2 {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		dlParam = resp.Header.Get("x-encrypted-param")
+		if dlParam != "" {
+			break
+		}
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return nil, fmt.Errorf("CDN upload failed: status=%d body=%s", resp.StatusCode, string(body[:min(len(body), 200)]))
+		}
+		if attempt < 2 {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		return nil, fmt.Errorf("CDN upload failed after 3 attempts: status=%d body=%s", resp.StatusCode, string(body[:min(len(body), 200)]))
 	}
 
 	return &UploadedFile{
